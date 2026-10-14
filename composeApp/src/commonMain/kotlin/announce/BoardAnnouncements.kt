@@ -19,16 +19,16 @@ import kotlin.math.abs
  */
 class BoardAnnouncements {
 
-    private var key: Pair<Int, BoardMode>? = null
+    private var key: Pair<String, BoardMode>? = null
     private var previous: Map<String, RfiTrain> = emptyMap()
 
     /** Ultimo ritardo annunciato (o già visibile) per treno, per non ripeterlo a ogni aggiornamento. */
     private val announcedDelay = HashMap<String, Int>()
     private val announcedCancelled = HashSet<String>()
 
-    fun update(stationId: Int, mode: BoardMode, board: RfiBoard): List<Announcement> {
+    fun update(stationId: String, mode: BoardMode, board: RfiBoard): List<Announcement> {
         val current = board.trains.associateBy { it.number }
-        val label = "${board.stationName.ifBlank { stationId.toString() }} · ${mode.label}"
+        val label = "${board.stationName.ifBlank { stationId }} · ${mode.label}"
         if (key != stationId to mode) {
             key = stationId to mode
             previous = current

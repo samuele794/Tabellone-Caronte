@@ -90,8 +90,8 @@ class RfiParserTest {
         val stations = RfiParser.parseStations(Fixtures.stazioni)
 
         assertEquals(2435, stations.size)
-        assertEquals(Station(364, "ABANO TERME"), stations.first())
-        assertTrue(Station(1728, "MILANO CENTRALE") in stations)
-        assertTrue(Station(413, "ALI' TERME") in stations, "entità HTML decodificate")
+        assertEquals(Station("364", "ABANO TERME"), stations.first())
+        assertTrue(Station("1728", "MILANO CENTRALE") in stations)
+        assertTrue(Station("413", "ALI' TERME") in stations, "entità HTML decodificate")
     }
 }

@@ -27,7 +27,7 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 
 /** Da dove arriva un elenco stazioni: ognuna ha la sua voce nella cache. */
-enum class StationSource { Rfi }
+enum class StationSource { Rfi, Fnm }
 
 /**
  * Elenchi stazioni salvati in locale con DataStore, in un file JSON su [path] (assoluto).

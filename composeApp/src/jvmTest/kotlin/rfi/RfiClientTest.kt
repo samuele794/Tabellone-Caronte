@@ -31,8 +31,8 @@ class RfiClientTest {
     @Test
     fun `url del monitor per partenze e arrivi`() = runBlocking {
         client().use { c ->
-            assertEquals("MILANO CENTRALE", c.board(1728, BoardMode.Departures).stationName)
-            assertEquals("NAPOLI CENTRALE", c.board(1888, BoardMode.Arrivals).stationName)
+            assertEquals("MILANO CENTRALE", c.board("1728", BoardMode.Departures).stationName)
+            assertEquals("NAPOLI CENTRALE", c.board("1888", BoardMode.Arrivals).stationName)
         }
 
         assertEquals(
@@ -58,7 +58,7 @@ class RfiClientTest {
             runBlocking {
                 client(HttpStatusCode.ServiceUnavailable).use {
                     it.board(
-                        1728,
+                        "1728",
                         BoardMode.Departures
                     )
                 }

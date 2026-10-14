@@ -22,11 +22,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -73,7 +75,6 @@ import kotlinx.datetime.format.MonthNames
 import kotlinx.datetime.format.char
 import kotlinx.datetime.toLocalDateTime
 import rfi.BoardMode
-import rfi.RfiClient
 import rfi.RfiMapper
 import rfi.Station
 import kotlin.math.ceil
@@ -83,34 +84,50 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
 import kotlin.time.TimeSource
 
-/** Ogni quanto riscaricare il monitor RFI. */
+/** Ogni quanto riscaricare il tabellone (per FNM: i dettagli dei treni). */
 private val REFRESH_MILLIS = 30.seconds
 
-val MilanoCentrale = Station(1728, "MILANO CENTRALE")
-
 /**
- * Stato del tabellone collegato al monitor RFI. Con un [announcer] le variazioni tra un
- * aggiornamento e il successivo vengono annunciate a voce; con una [stationCache] l'elenco
- * stazioni si scarica al più una volta al mese.
+ * Stato del tabellone collegato a uno dei [sources] (RFI, FNM…), scelto insieme alla stazione.
+ * Con un [announcer] le variazioni tra un aggiornamento e il successivo vengono annunciate a voce;
+ * con una [stationCache] gli elenchi stazioni si scaricano al più una volta al mese.
  */
 @Stable
 class LiveBoardState(
-    private val client: RfiClient,
-    initial: Station = MilanoCentrale,
+    private val sources: Map<StationSource, BoardSource>,
+    initialSource: StationSource = StationSource.Rfi,
+    initial: Station = sources.getValue(initialSource).defaultStation,
     private val announcer: Announcer? = null,
     private val stationCache: StationCache? = null,
 ) {
     private val mapper = RfiMapper()
     private val announcements = BoardAnnouncements()
 
-    var stations by mutableStateOf<List<Station>>(emptyList())
-        private set
-    var stationsError by mutableStateOf<String?>(null)
+    /** Fornitori disponibili, nell'ordine delle schede del dialogo stazione. */
+    val availableSources: List<StationSource> = StationSource.entries.filter { it in sources }
+
+    private var stationLists by mutableStateOf<Map<StationSource, List<Station>>>(emptyMap())
+    private var stationErrors by mutableStateOf<Map<StationSource, String>>(emptyMap())
+
+    /** Elenco stazioni di [source]; vuoto finché non è caricato. */
+    fun stations(source: StationSource): List<Station> = stationLists[source].orEmpty()
+
+    fun stationsError(source: StationSource): String? = stationErrors[source]
+
+    var source by mutableStateOf(initialSource)
         private set
     var station by mutableStateOf(initial)
+        private set
     var mode by mutableStateOf(BoardMode.Departures)
     var autoScroll by mutableStateOf(true)
     private var announceState by mutableStateOf(true)
+
+    /** Cambia fornitore e stazione insieme. */
+    fun select(source: StationSource, station: Station) {
+        require(source in sources) { "Fornitore $source non disponibile" }
+        this.source = source
+        this.station = station
+    }
 
     /** Annunci sonori attivi; spegnendoli si interrompe anche quello in corso. */
     var announce: Boolean
@@ -134,8 +151,12 @@ class LiveBoardState(
     var error by mutableStateOf<String?>(null)
         private set
 
+    /** Prossimo riscaricamento dell'elenco treni, per i fornitori che lo fanno più di rado. */
+    var nextListRefreshAt by mutableStateOf<TimeSource.Monotonic.ValueTimeMark?>(null)
+        private set
+
     /** Stazione e modalità a cui si riferiscono [departures]. */
-    private var loadedKey: Pair<Int, BoardMode>? = null
+    private var loadedKey: Triple<StationSource, String, BoardMode>? = null
 
     /** Fine dell'ultimo tentativo di aggiornamento, riuscito o no. */
     private var lastRefresh: TimeSource.Monotonic.ValueTimeMark? = null
@@ -156,39 +177,42 @@ class LiveBoardState(
      */
     fun nextRefreshIn(interval: Duration): Duration {
         val last = lastRefresh ?: return Duration.ZERO
-        if (loadedKey != (station.id to mode)) return Duration.ZERO
+        if (loadedKey != Triple(source, station.id, mode)) return Duration.ZERO
         return (interval - last.elapsedNow()).coerceAtLeast(Duration.ZERO)
     }
 
-    suspend fun loadStations() {
-        stationsError = null
+    suspend fun loadStations(source: StationSource = this.source) {
+        stationErrors -= source
+        val client = sources.getValue(source)
         try {
-            stations =
-                stationCache?.stations(StationSource.Rfi, client::stations) ?: client.stations()
-            announcer?.places = PlaceNames(stations.map { it.name })
+            val list = stationCache?.stations(source, client::stations) ?: client.stations()
+            stationLists += source to list
+            announcer?.places = PlaceNames(stationLists.values.flatten().map { it.name }.distinct())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            stationsError = "Elenco stazioni non disponibile: ${e.message ?: e::class.simpleName}"
+            stationErrors += source to "Elenco stazioni non disponibile: ${e.message ?: e::class.simpleName}"
         }
     }
 
-    /** Scarica il monitor; se fallisce tiene gli ultimi dati validi della stessa tabella. */
+    /** Scarica il tabellone; se fallisce tiene gli ultimi dati validi della stessa tabella. */
     suspend fun refresh() {
-        val key = station.id to mode
+        val key = Triple(source, station.id, mode)
+        val client = sources.getValue(key.first)
         if (key != loadedKey) {
             departures = emptyList()
             notices = emptyList()
+            nextListRefreshAt = null
             // Gli annunci della stazione precedente non servono più.
             announcer?.clear()
         }
         loading = true
         try {
-            val board = client.board(key.first, key.second)
+            val board = client.board(station, key.third)
             departures = mapper.departures(board)
             notices = board.notices
             // Il primo tabellone di una stazione fa solo da base: update() non annuncia nulla.
-            val news = announcements.update(key.first, key.second, board)
+            val news = announcements.update(key.second, key.third, board)
             when {
                 news.isEmpty() -> Unit
                 announce -> announcer?.enqueue(news)
@@ -204,6 +228,7 @@ class LiveBoardState(
         } finally {
             loading = false
             lastRefresh = TimeSource.Monotonic.markNow()
+            nextListRefreshAt = client.nextListRefreshAt
         }
     }
 }
@@ -211,8 +236,10 @@ class LiveBoardState(
 /** Tabellone live a tutto schermo; stazione, modalità e scorrimento si cambiano dalla rotella. */
 @Composable
 fun LiveBoard(state: LiveBoardState, now: LocalDateTime) {
-    LaunchedEffect(Unit) { if (state.stations.isEmpty()) state.loadStations() }
-    LaunchedEffect(state.station.id, state.mode) {
+    LaunchedEffect(state.source) {
+        if (state.stations(state.source).isEmpty()) state.loadStations()
+    }
+    LaunchedEffect(state.source, state.station.id, state.mode) {
         state.waitForRefresh(state.nextRefreshIn(REFRESH_MILLIS))
         while (isActive) {
             state.refresh()
@@ -234,7 +261,11 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime) {
                 logoDensity = RfiMapper.LOGO_DENSITY,
             ),
             colors = colors,
-            status = statusLabel(state, secondsToRefresh(state.nextRefreshAt)),
+            status = statusLabel(
+                state,
+                secondsLeft = secondsToRefresh(state.nextRefreshAt),
+                listSecondsLeft = secondsToRefresh(state.nextListRefreshAt),
+            ),
             onSettingsClick = { showSettings = true },
             modifier = Modifier.fillMaxSize(),
         )
@@ -245,9 +276,14 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime) {
 
 /**
  * Scritta accanto alla rotella: ora dell'ultimo aggiornamento, o perché manca, e quanto manca
- * al prossimo ([secondsLeft]).
+ * al prossimo ([secondsLeft]). Per i fornitori che riscaricano l'elenco treni più di rado
+ * ([listSecondsLeft]) mostra i due conti alla rovescia: dettagli ed elenco.
  */
-private fun statusLabel(state: LiveBoardState, secondsLeft: Long?): String? {
+internal fun statusLabel(
+    state: LiveBoardState,
+    secondsLeft: Long?,
+    listSecondsLeft: Long?
+): String? {
     val updated = state.updatedAt?.format(TimeWithSeconds)
     val last = when {
         state.error != null && updated != null -> "Aggiornamento non riuscito · dati delle $updated"
@@ -256,14 +292,22 @@ private fun statusLabel(state: LiveBoardState, secondsLeft: Long?): String? {
         state.loading -> return "Aggiornamento…"
         else -> return null
     }
+    val list = listSecondsLeft?.let { " · elenco tra ${countdown(it)}" }.orEmpty()
     val next = when {
         state.loading -> "aggiornamento…"
-        secondsLeft == null -> return last
+        secondsLeft == null -> return last + list
         state.error != null -> "nuovo tentativo tra $secondsLeft s"
+        listSecondsLeft != null -> "dettagli tra $secondsLeft s"
         else -> "prossimo tra $secondsLeft s"
     }
-    return "$last · $next"
+    return "$last · $next$list"
 }
+
+/** "45 s", "4:05". */
+private fun countdown(seconds: Long): String =
+    if (seconds < 60) "$seconds s" else "${seconds / 60}:${
+        (seconds % 60).toString().padStart(2, '0')
+    }"
 
 /** Secondi interi (per eccesso) che mancano a [target], aggiornati allo scatto di ogni secondo. */
 @Composable
@@ -290,7 +334,7 @@ private fun SettingsDialog(state: LiveBoardState, onDismiss: () -> Unit) {
         title = { Text("Impostazioni") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                StationField(state.station, onClick = { pickStation = true })
+                StationField(state.source, state.station, onClick = { pickStation = true })
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     BoardMode.entries.forEachIndexed { i, mode ->
                         SegmentedButton(
@@ -333,8 +377,8 @@ private fun SettingsDialog(state: LiveBoardState, onDismiss: () -> Unit) {
     if (pickStation) {
         StationDialog(
             state,
-            onSelect = {
-                state.station = it
+            onSelect = { source, station ->
+                state.select(source, station)
                 pickStation = false
             },
             onDismiss = { pickStation = false },
@@ -344,13 +388,13 @@ private fun SettingsDialog(state: LiveBoardState, onDismiss: () -> Unit) {
 
 /** Campo di sola lettura: un clic apre la scelta della stazione. */
 @Composable
-private fun StationField(station: Station, onClick: () -> Unit) {
+private fun StationField(source: StationSource, station: Station, onClick: () -> Unit) {
     Box {
         OutlinedTextField(
             value = station.name,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Stazione") },
+            label = { Text("Stazione (${source.label})") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -359,16 +403,22 @@ private fun StationField(station: Station, onClick: () -> Unit) {
     }
 }
 
-/** Elenco completo delle ~2400 località RFI, filtrabile dalla barra di ricerca. */
+/**
+ * Elenco delle stazioni, una scheda per fornitore (RFI ~2400 località, FNM ~560), filtrabile dalla
+ * barra di ricerca. Scegliere una stazione di un'altra scheda cambia anche il fornitore.
+ */
 @Composable
 private fun StationDialog(
     state: LiveBoardState,
-    onSelect: (Station) -> Unit,
+    onSelect: (StationSource, Station) -> Unit,
     onDismiss: () -> Unit
 ) {
-    LaunchedEffect(Unit) { if (state.stations.isEmpty()) state.loadStations() }
+    var tab by rememberSaveable { mutableStateOf(state.source) }
+    LaunchedEffect(tab) { if (state.stations(tab).isEmpty()) state.loadStations(tab) }
     var query by rememberSaveable { mutableStateOf("") }
-    val stations = state.stations
+    val stations = state.stations(tab)
+    val stationsError = state.stationsError(tab)
+    val current = state.station.takeIf { tab == state.source }
     val matches = remember(stations, query) {
         val q = query.trim()
         if (q.isEmpty()) stations else stations.filter { it.name.contains(q, ignoreCase = true) }
@@ -376,7 +426,7 @@ private fun StationDialog(
     val list = rememberLazyListState()
     // Senza filtro si parte dalla stazione attuale; filtrando, dal primo risultato.
     LaunchedEffect(matches) {
-        val i = matches.indexOf(state.station)
+        val i = current?.let(matches::indexOf) ?: -1
         list.scrollToItem(if (query.isBlank() && i > 0) i - 1 else 0)
     }
     val focus = remember { FocusRequester() }
@@ -398,6 +448,20 @@ private fun StationDialog(
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.padding(horizontal = 24.dp),
                 )
+                if (state.availableSources.size > 1) {
+                    PrimaryTabRow(
+                        selectedTabIndex = state.availableSources.indexOf(tab).coerceAtLeast(0),
+                        modifier = Modifier.padding(top = 16.dp),
+                    ) {
+                        state.availableSources.forEach { source ->
+                            Tab(
+                                selected = source == tab,
+                                onClick = { tab = source },
+                                text = { Text(source.label) },
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -413,13 +477,13 @@ private fun StationDialog(
                             items(matches, key = { it.id }) { station ->
                                 StationItem(
                                     station,
-                                    selected = station == state.station,
-                                    onClick = { onSelect(station) })
+                                    selected = station == current,
+                                    onClick = { onSelect(tab, station) })
                             }
                         }
 
-                        state.stationsError != null -> Text(
-                            state.stationsError.orEmpty(),
+                        stationsError != null -> Text(
+                            stationsError,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(24.dp),
                         )
@@ -438,8 +502,8 @@ private fun StationDialog(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    if (state.stationsError != null) {
-                        TextButton(onClick = { scope.launch { state.loadStations() } }) { Text("Riprova") }
+                    if (stationsError != null) {
+                        TextButton(onClick = { scope.launch { state.loadStations(tab) } }) { Text("Riprova") }
                     }
                     TextButton(onClick = onDismiss) { Text("Annulla") }
                 }
@@ -447,6 +511,13 @@ private fun StationDialog(
         }
     }
 }
+
+/** Nome del fornitore nelle schede e nelle etichette. */
+private val StationSource.label
+    get() = when (this) {
+        StationSource.Rfi -> "RFI"
+        StationSource.Fnm -> "FNM"
+    }
 
 @Composable
 private fun StationItem(station: Station, selected: Boolean, onClick: () -> Unit) {

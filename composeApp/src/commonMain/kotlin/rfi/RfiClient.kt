@@ -36,7 +36,7 @@ class RfiClient(
     suspend fun stations(): List<Station> =
         RfiParser.parseStations(fetch("$baseUrl/arrivipartenze"))
 
-    suspend fun board(placeId: Int, mode: BoardMode): RfiBoard =
+    suspend fun board(placeId: String, mode: BoardMode): RfiBoard =
         RfiParser.parseBoard(
             fetch("$baseUrl/ArriviPartenze/ArrivalsDepartures/Monitor") {
                 parameter("placeId", placeId)

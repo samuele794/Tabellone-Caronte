@@ -28,8 +28,8 @@ class StationCacheTest {
         }
     }
 
-    private val milano = listOf(Station(1728, "MILANO CENTRALE"))
-    private val napoli = listOf(Station(1888, "NAPOLI CENTRALE"))
+    private val milano = listOf(Station("1728", "MILANO CENTRALE"))
+    private val napoli = listOf(Station("1888", "NAPOLI CENTRALE"))
 
     private var downloads = 0
     private fun fetching(stations: List<Station>): suspend () -> List<Station> = {

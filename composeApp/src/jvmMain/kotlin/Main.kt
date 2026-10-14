@@ -26,12 +26,16 @@ import departureboard.BoardLayout
 import departureboard.DepartureBoard
 import departureboard.LocalLedTicker
 import departureboard.SampleDepartures
+import fnm.FnmBoardSource
+import fnm.FnmClient
+import fnm.FnmKeyStore
 import kotlinx.coroutines.runBlocking
 import live.LiveBoard
 import live.LiveBoardState
 import live.rememberNow
 import org.jetbrains.skia.EncodedImageFormat
 import rfi.BoardMode
+import rfi.RfiBoardSource
 import rfi.RfiClient
 import rfi.RfiTrain
 import tts.DesktopSpeechEngine
@@ -59,23 +63,26 @@ fun main(args: Array<String>) {
         announceDemo()
         return
     }
-    val client = RfiClient()
-    val stationCache = StationCache(
-        File(
-            System.getProperty("user.home"),
-            ".departure-board/stations.json"
-        ).absolutePath
-    )
+    val dataDir = File(System.getProperty("user.home"), ".departure-board")
+    val stationCache = StationCache(File(dataDir, "stations.json").absolutePath)
+    val fnmClient = FnmClient()
+    val sources = listOf(
+        RfiBoardSource(RfiClient()),
+        FnmBoardSource(
+            fnmClient,
+            FnmKeyStore(File(dataDir, "fnm-key.json").absolutePath, fnmClient::webComponentsJs),
+        ),
+    ).associateBy { it.source }
     val announcer = Announcer(DesktopSpeechEngine(), JvmSoundPlayer())
     System.setProperty("skiko.fps.enabled", "true")
     application {
         val state =
-            remember { LiveBoardState(client, announcer = announcer, stationCache = stationCache) }
+            remember { LiveBoardState(sources, announcer = announcer, stationCache = stationCache) }
         Window(
             onCloseRequest = {
                 announcer.close()
                 stationCache.close()
-                client.close()
+                sources.values.forEach { it.close() }
                 exitApplication()
             },
             title = "${if (state.mode == BoardMode.Arrivals) "Arrivi" else "Partenze"} — ${state.station.name}",

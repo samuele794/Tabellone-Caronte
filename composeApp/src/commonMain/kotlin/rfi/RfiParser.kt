@@ -17,7 +17,8 @@ object RfiParser {
         Ksoup.parse(html)
             .select("select#ElencoLocalita > option")
             .mapNotNull { option ->
-                val id = option.attr("value").toIntOrNull() ?: return@mapNotNull null
+                val id = option.attr("value").trim().takeIf { it.toIntOrNull() != null }
+                    ?: return@mapNotNull null
                 val name = option.text().trim()
                 if (name.isEmpty()) null else Station(id, name)
             }

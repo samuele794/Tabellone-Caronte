@@ -10,12 +10,12 @@ import kotlin.test.assertTrue
 
 class BoardAnnouncementsTest {
 
-    private val milano = 1728
-    private val napoli = 1951
+    private val milano = "1728"
+    private val napoli = "1951"
 
     private fun BoardAnnouncements.codes(
         board: rfi.RfiBoard,
-        station: Int = milano,
+        station: String = milano,
         mode: rfi.BoardMode = Departures
     ) =
         update(station, mode, board).map { "${it.code} ${it.train.number}" }
