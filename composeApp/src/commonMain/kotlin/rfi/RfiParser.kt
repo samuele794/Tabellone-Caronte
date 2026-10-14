@@ -42,6 +42,9 @@ object RfiParser {
         if (row.id().isBlank() || number.isEmpty()) return null
 
         val logo = row.cell("RVettore")?.selectFirst("img.logoCliente")
+        val delay = row.cell("RRitardo")
+        val info = row.cell("RDettagli")?.selectFirst(".testoinfoaggiuntive")?.text()
+            ?.let(::cleanInfo).orEmpty()
         val category = row.cell("RCategoria")?.selectFirst("img.logoCategoria")
             ?.attr("alt")?.trim()?.removePrefix("Categoria ")?.trim().orEmpty()
 
@@ -52,13 +55,17 @@ object RfiParser {
             number = number,
             station = row.cell("RStazione")?.text()?.trim().orEmpty(),
             time = row.cell("ROrario")?.text()?.trim().orEmpty(),
-            delayMinutes = row.cell("RRitardo")?.text()?.trim()?.toIntOrNull(),
+            delayMinutes = delay?.text()?.trim()?.toIntOrNull(),
             platform = row.cell("RBinario")?.text()?.trim().orEmpty(),
             flashing = row.cell("RExLampeggio")?.selectFirst("img.exlampeggio[alt=Si]") != null,
-            info = row.cell("RDettagli")?.selectFirst(".testoinfoaggiuntive")?.text()
-                ?.let(::cleanInfo).orEmpty(),
+            info = info,
+            cancelled = listOfNotNull(delay?.text(), delay?.attr("aria-label"), info)
+                .any { text -> CANCELLED.any { text.contains(it, ignoreCase = true) } },
         )
     }
+
+    /** Parole con cui il monitor segnala un treno che non circola (non presenti nelle pagine salvate). */
+    private val CANCELLED = listOf("CANCELLAT", "SOPPRESS")
 
     private fun Element.cell(id: String): Element? = selectFirst("td[id=$id]")
 

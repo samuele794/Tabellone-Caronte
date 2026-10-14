@@ -17,34 +17,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import announce.Announcement
+import announce.AnnouncementText
+import announce.Announcer
 import departureboard.BoardLabels
 import departureboard.BoardLayout
 import departureboard.DepartureBoard
 import departureboard.LocalLedTicker
 import departureboard.SampleDepartures
+import kotlinx.coroutines.runBlocking
 import live.LiveBoard
 import live.LiveBoardState
 import live.rememberNow
 import org.jetbrains.skia.EncodedImageFormat
 import rfi.BoardMode
 import rfi.RfiClient
+import rfi.RfiTrain
+import tts.DesktopSpeechEngine
+import tts.JvmSoundPlayer
 import java.io.File
 
 //https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1728&arrivals=False
-
-/*
-pip install coqui-tts
-python
-from TTS.api import TTS
-
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")  # oppure "cpu"
-tts.tts_to_file(
-    text="Il treno regionale per Genova Brignole è in arrivo al binario tre.",
-    speaker_wav="riferimento_raffaele.wav",
-    language="it",
-    file_path="annuncio.wav",
-)
- */
 
 fun main(args: Array<String>) {
     // ./gradlew run --args="--snapshot board.png [secondi] [de]"
@@ -60,12 +53,19 @@ fun main(args: Array<String>) {
         bench(args.getOrNull(1)?.toIntOrNull() ?: 600)
         return
     }
+    // ./gradlew run --args="--announce"
+    if (args.firstOrNull() == "--announce") {
+        announceDemo()
+        return
+    }
     val client = RfiClient()
+    val announcer = Announcer(DesktopSpeechEngine(), JvmSoundPlayer())
     System.setProperty("skiko.fps.enabled", "true")
     application {
-        val state = remember { LiveBoardState(client) }
+        val state = remember { LiveBoardState(client, announcer = announcer) }
         Window(
             onCloseRequest = {
+                announcer.close()
                 client.close()
                 exitApplication()
             },
@@ -148,6 +148,25 @@ private fun bench(frames: Int) {
     val avg = times.average() / 1e6
     val p95 = times[(frames * 0.95).toInt().coerceAtMost(frames - 1)] / 1e6
     println("Bench: %d frame, media %.2f ms, p95 %.2f ms".format(frames, avg, p95))
+}
+
+/** Jingle + annuncio P1 di esempio, per provare la voce del sistema operativo. */
+private fun announceDemo() = runBlocking {
+    val train = RfiTrain(
+        carrier = "TRENITALIA",
+        carrierLogoBase64 = null,
+        category = "ALTA VELOCITA'",
+        number = "9915",
+        station = "BARI C.LE",
+        time = "07:40",
+        delayMinutes = 20,
+        platform = "11",
+        flashing = true,
+        info = "FERMA A:BOLOGNA C.LE (9:30) - ANCONA (11:20) - PESCARA C.LE (12:40) - BARI C.LE (15:00)",
+    )
+    val announcement = Announcement.Imminent(train, BoardMode.Departures)
+    println(announcement.code + ": " + AnnouncementText.text(announcement))
+    Announcer(DesktopSpeechEngine(), JvmSoundPlayer()).use { it.announce(announcement) }
 }
 
 /** Tempo della scena a scatti di 100 ms, come [departureboard.rememberLedTicker]. */

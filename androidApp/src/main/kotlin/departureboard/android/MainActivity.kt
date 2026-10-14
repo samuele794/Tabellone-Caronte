@@ -10,10 +10,13 @@ import androidx.compose.runtime.remember
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import announce.Announcer
 import live.LiveBoard
 import live.LiveBoardState
 import live.rememberNow
 import rfi.RfiClient
+import tts.AndroidSoundPlayer
+import tts.AndroidSpeechEngine
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -26,8 +29,16 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             val client = remember { RfiClient() }
-            DisposableEffect(client) { onDispose { client.close() } }
-            val state = remember { LiveBoardState(client) }
+            val announcer = remember {
+                Announcer(AndroidSpeechEngine(this), AndroidSoundPlayer(this))
+            }
+            DisposableEffect(client, announcer) {
+                onDispose {
+                    announcer.close()
+                    client.close()
+                }
+            }
+            val state = remember { LiveBoardState(client, announcer = announcer) }
             MaterialTheme {
                 LiveBoard(state, now = rememberNow())
             }

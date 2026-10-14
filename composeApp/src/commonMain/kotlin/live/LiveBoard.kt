@@ -47,6 +47,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import announce.Announcer
+import announce.BoardAnnouncements
+import debuglog.DebugLog
 import departureboard.BoardColors
 import departureboard.BoardFooter
 import departureboard.BoardLabels
@@ -77,10 +80,18 @@ private val REFRESH_MILLIS = 30.seconds
 
 val MilanoCentrale = Station(1728, "MILANO CENTRALE")
 
-/** Stato del tabellone collegato al monitor RFI. */
+/**
+ * Stato del tabellone collegato al monitor RFI. Con un [announcer] le variazioni tra un
+ * aggiornamento e il successivo vengono annunciate a voce.
+ */
 @Stable
-class LiveBoardState(private val client: RfiClient, initial: Station = MilanoCentrale) {
+class LiveBoardState(
+    private val client: RfiClient,
+    initial: Station = MilanoCentrale,
+    private val announcer: Announcer? = null,
+) {
     private val mapper = RfiMapper()
+    private val announcements = BoardAnnouncements()
 
     var stations by mutableStateOf<List<Station>>(emptyList())
         private set
@@ -89,6 +100,18 @@ class LiveBoardState(private val client: RfiClient, initial: Station = MilanoCen
     var station by mutableStateOf(initial)
     var mode by mutableStateOf(BoardMode.Departures)
     var autoScroll by mutableStateOf(true)
+    private var announceState by mutableStateOf(true)
+
+    /** Annunci sonori attivi; spegnendoli si interrompe anche quello in corso. */
+    var announce: Boolean
+        get() = announceState
+        set(value) {
+            announceState = value
+            if (!value) announcer?.clear()
+        }
+
+    /** Se il tabellone ha un motore per gli annunci sonori. */
+    val canAnnounce get() = announcer != null
 
     var departures by mutableStateOf<List<Departure>>(emptyList())
         private set
@@ -121,12 +144,21 @@ class LiveBoardState(private val client: RfiClient, initial: Station = MilanoCen
         if (key != loadedKey) {
             departures = emptyList()
             notices = emptyList()
+            // Gli annunci della stazione precedente non servono più.
+            announcer?.clear()
         }
         loading = true
         try {
             val board = client.board(key.first, key.second)
             departures = mapper.departures(board)
             notices = board.notices
+            // Il primo tabellone di una stazione fa solo da base: update() non annuncia nulla.
+            val news = announcements.update(key.first, key.second, board)
+            when {
+                news.isEmpty() -> Unit
+                announce -> announcer?.enqueue(news)
+                else -> DebugLog.d(Announcer.TAG) { "Annunci spenti: scartati ${news.joinToString { it.code }}" }
+            }
             loadedKey = key
             updatedAt = localNow()
             error = null
@@ -212,6 +244,16 @@ private fun SettingsDialog(state: LiveBoardState, onDismiss: () -> Unit) {
                 ) {
                     Text("Scorrimento automatico", style = MaterialTheme.typography.bodyLarge)
                     Switch(checked = state.autoScroll, onCheckedChange = { state.autoScroll = it })
+                }
+                if (state.canAnnounce) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Annunci sonori", style = MaterialTheme.typography.bodyLarge)
+                        Switch(checked = state.announce, onCheckedChange = { state.announce = it })
+                    }
                 }
                 state.error?.let {
                     Text(

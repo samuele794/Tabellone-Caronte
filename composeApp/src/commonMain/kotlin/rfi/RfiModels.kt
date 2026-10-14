@@ -29,9 +29,11 @@ class RfiTrain(
     val flashing: Boolean,
     /** Fermate successive ("FERMA A: …"), vuoto se non c'è. */
     val info: String,
+    /** Treno cancellato/soppresso, se il monitor lo segnala nella cella del ritardo o nelle info. */
+    val cancelled: Boolean = false,
 ) {
     override fun toString() =
-        "RfiTrain($carrier $category $number → $station $time +$delayMinutes bin=$platform flashing=$flashing)"
+        "RfiTrain($carrier $category $number → $station $time +$delayMinutes bin=$platform flashing=$flashing cancelled=$cancelled)"
 }
 
 /** Il contenuto utile di una pagina del monitor. */

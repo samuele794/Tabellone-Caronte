@@ -14,6 +14,7 @@ kotlin {
         namespace = "departureboard.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
+        androidResources { enable = true }
     }
 
     sourceSets {
@@ -31,6 +32,7 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.ktor.client.cio)
+            implementation(libs.jlayer)
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
@@ -38,8 +40,13 @@ kotlin {
         jvmTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.ktor.client.mock)
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
+}
+
+compose.resources {
+    packageOfResClass = "departureboard.resources"
 }
 
 compose.desktop {
