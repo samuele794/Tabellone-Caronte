@@ -23,7 +23,8 @@ class RfiMapper {
         destination = train.station,
         time = train.time,
         delayMinutes = train.delayMinutes,
-        info = train.info,
+        // Le note seguono le fermate nella stessa colonna.
+        info = (listOf(train.info) + train.notes).filter { it.isNotBlank() }.joinToString(" - "),
         platform = train.platform,
         // GIF su fondo trasparente (DotSampling.Alpha, il default) con scritte a tratto sottile.
         logo = train.carrierLogoBase64?.let(::logo),

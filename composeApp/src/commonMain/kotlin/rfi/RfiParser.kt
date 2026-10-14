@@ -43,8 +43,11 @@ object RfiParser {
 
         val logo = row.cell("RVettore")?.selectFirst("img.logoCliente")
         val delay = row.cell("RRitardo")
-        val info = row.cell("RDettagli")?.selectFirst(".testoinfoaggiuntive")?.text()
-            ?.let(::cleanInfo).orEmpty()
+        val details = row.cell("RDettagli")?.let(::details).orEmpty()
+        val info = details[STOPS_TITLE].orEmpty()
+        val notes =
+            details[NOTES_TITLE].orEmpty().split(" - ").map { it.trim() }.filter { it.isNotEmpty() }
+                .distinct()
         val category = row.cell("RCategoria")?.selectFirst("img.logoCategoria")
             ?.attr("alt")?.trim()?.removePrefix("Categoria ")?.trim().orEmpty()
 
@@ -59,12 +62,27 @@ object RfiParser {
             platform = row.cell("RBinario")?.text()?.trim().orEmpty(),
             flashing = row.cell("RExLampeggio")?.selectFirst("img.exlampeggio[alt=Si]") != null,
             info = info,
-            cancelled = listOfNotNull(delay?.text(), delay?.attr("aria-label"), info)
+            notes = notes,
+            cancelled = (listOfNotNull(delay?.text(), delay?.attr("aria-label"), info) + notes)
                 .any { text -> CANCELLED.any { text.contains(it, ignoreCase = true) } },
         )
     }
 
-    /** Parole con cui il monitor segnala un treno che non circola (non presenti nelle pagine salvate). */
+    /**
+     * Il popup dei dettagli ha più blocchi titolo + testo: "Fermate successive" e "Informazioni"
+     * (composizione, gate, "VIA …", bus sostitutivi…). Ogni blocco può mancare.
+     */
+    private fun details(cell: Element): Map<String, String> =
+        cell.select(".titoloInfoAggiuntive").mapNotNull { title ->
+            val text = title.nextElementSibling()?.takeIf { it.hasClass("testoinfoaggiuntive") }
+                ?: return@mapNotNull null
+            title.text().trim() to cleanInfo(text.text())
+        }.toMap()
+
+    private const val STOPS_TITLE = "Fermate successive"
+    private const val NOTES_TITLE = "Informazioni"
+
+    /** Parole con cui il monitor segnala un treno che non circola ("Cancellato" nella cella del ritardo). */
     private val CANCELLED = listOf("CANCELLAT", "SOPPRESS")
 
     private fun Element.cell(id: String): Element? = selectFirst("td[id=$id]")

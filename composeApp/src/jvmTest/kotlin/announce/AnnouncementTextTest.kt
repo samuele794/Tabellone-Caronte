@@ -60,7 +60,7 @@ class AnnouncementTextTest {
         val a = Announcement.Imminent(bus, Departures)
         assertEquals("P16", a.code)
         assertEquals(
-            "L'autobus sostitutivo dodici quarantasette A di Trenord, delle ore zero e zero cinque, " +
+            "L'autobus sostitutivo dodici quarantasette a di Trenord, delle ore zero e zero cinque, " +
                     "per Bergamo, è previsto in partenza dal piazzale antistante la stazione.",
             text(a),
         )

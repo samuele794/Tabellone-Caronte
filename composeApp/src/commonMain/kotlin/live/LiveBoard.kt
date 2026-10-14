@@ -49,6 +49,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import announce.Announcer
 import announce.BoardAnnouncements
+import announce.PlaceNames
 import debuglog.DebugLog
 import departureboard.BoardColors
 import departureboard.BoardFooter
@@ -146,6 +147,7 @@ class LiveBoardState(
         stationsError = null
         try {
             stations = client.stations()
+            announcer?.places = PlaceNames(stations.map { it.name })
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

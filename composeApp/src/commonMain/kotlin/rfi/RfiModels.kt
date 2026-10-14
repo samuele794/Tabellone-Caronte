@@ -29,6 +29,8 @@ class RfiTrain(
     val flashing: Boolean,
     /** Fermate successive ("FERMA A: …"), vuoto se non c'è. */
     val info: String,
+    /** Blocco "Informazioni": "CARROZZA 1 IN TESTA AL TRENO", "GATE B", "VIA AVERSA", "NO-STOP"… */
+    val notes: List<String> = emptyList(),
     /** Treno cancellato/soppresso, se il monitor lo segnala nella cella del ritardo o nelle info. */
     val cancelled: Boolean = false,
 ) {

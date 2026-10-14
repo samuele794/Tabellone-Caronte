@@ -40,6 +40,10 @@ class Announcer(
     @Volatile
     private var current: Job? = null
 
+    /** Località RFI per sciogliere le abbreviazioni nei testi; si aggiorna quando arriva l'elenco. */
+    @Volatile
+    var places: PlaceNames = PlaceNames.None
+
     init {
         scope.launch {
             for ((gen, announcement) in queue) {
@@ -57,7 +61,7 @@ class Announcer(
     fun enqueue(announcements: List<Announcement>) {
         val gen = generation
         announcements.forEach {
-            DebugLog.d(TAG) { "In coda ${it.summary()}: ${AnnouncementText.text(it)}" }
+            DebugLog.d(TAG) { "In coda ${it.summary()}: ${AnnouncementText.text(it, places)}" }
             queue.trySend(gen to it)
         }
     }
@@ -71,7 +75,7 @@ class Announcer(
 
     /** Diffonde subito [announcement], fuori dalla coda; ritorna a fine lettura. */
     suspend fun announce(announcement: Announcement) {
-        val text = AnnouncementText.text(announcement)
+        val text = AnnouncementText.text(announcement, places)
         try {
             DebugLog.d(TAG) { "Diffondo ${announcement.summary()}: $text" }
             jingleBytes.await()?.let { sound.play(it) }
