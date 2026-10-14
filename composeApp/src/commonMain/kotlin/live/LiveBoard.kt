@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.keepScreenOn
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -216,7 +217,7 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
 
     val colors = remember { BoardColors() }
-    Box(Modifier.fillMaxSize().background(colors.frame).safeDrawingPadding()) {
+    Box(Modifier.fillMaxSize().background(colors.frame).safeDrawingPadding().keepScreenOn()) {
         DepartureBoard(
             departures = state.departures,
             footer = boardFooter(now, state.notices, state.station.name),
