@@ -12,6 +12,7 @@ datastore = "1.2.1"
 androidx-activity = "1.13.0"
 lifecycle = "2.9.6"
 jlayer = "1.0.1"
+kotlinx-browser = "0.5.0"
 android-compileSdk = "37"
 android-targetSdk = "37"
 android-minSdk = "24"
@@ -25,6 +26,8 @@ compose-components-resources = { module = "org.jetbrains.compose.components:comp
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-js = { module = "io.ktor:ktor-client-js", version.ref = "ktor" }
+kotlinx-browser = { module = "org.jetbrains.kotlinx:kotlinx-browser", version.ref = "kotlinx-browser" }
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 ksoup = { module = "com.fleeksoft.ksoup:ksoup", version.ref = "ksoup" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }

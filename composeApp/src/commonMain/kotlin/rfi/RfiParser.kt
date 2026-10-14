@@ -44,6 +44,8 @@ object RfiParser {
 
         val logo = row.cell("RVettore")?.selectFirst("img.logoCliente")
         val delay = row.cell("RRitardo")
+        val delayCell = delay?.text()?.trim().orEmpty()
+        val delayMinutes = delayCell.toIntOrNull()
         val details = row.cell("RDettagli")?.let(::details).orEmpty()
         val info = details[STOPS_TITLE].orEmpty()
         val notes =
@@ -59,13 +61,14 @@ object RfiParser {
             number = number,
             station = row.cell("RStazione")?.text()?.trim().orEmpty(),
             time = row.cell("ROrario")?.text()?.trim().orEmpty(),
-            delayMinutes = delay?.text()?.trim()?.toIntOrNull(),
+            delayMinutes = delayMinutes,
             platform = row.cell("RBinario")?.text()?.trim().orEmpty(),
             flashing = row.cell("RExLampeggio")?.selectFirst("img.exlampeggio[alt=Si]") != null,
             info = info,
             notes = notes,
             cancelled = (listOfNotNull(delay?.text(), delay?.attr("aria-label"), info) + notes)
                 .any { text -> CANCELLED.any { text.contains(it, ignoreCase = true) } },
+            delayText = if (delayMinutes == null) delayCell else "",
         )
     }
 

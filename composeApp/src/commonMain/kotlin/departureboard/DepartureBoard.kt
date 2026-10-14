@@ -84,6 +84,8 @@ data class Departure(
     val logoThreshold: Float = 0.42f,
     /** Le due spie a destra della riga (lampeggiano quando il treno è in partenza). */
     val lamps: Lamps = Lamps.Off,
+    /** Testo della fonte al posto dei minuti ("RITARDO"): se c'è, si mostra com'è e scorre se non entra. */
+    val delayText: String = "",
 )
 
 enum class Lamps { Off, On, Blinking }
@@ -552,12 +554,15 @@ private fun DepartureRow(d: Departure?, layout: BoardLayout, g: BoardGeometry, p
             DotMatrixText(d?.time.orEmpty(), chars = layout.timeChars, marquee = Marquee.Off)
         }
         Module(g.delay, p) {
-            val delay = d?.delayMinutes?.takeIf { it > 0 }?.let { "$it'" }.orEmpty()
+            val text = d?.delayText.orEmpty()
+            val delay =
+                text.ifEmpty { d?.delayMinutes?.takeIf { it > 0 }?.let { "$it'" }.orEmpty() }
             DotMatrixText(
                 delay,
                 chars = layout.delayChars,
                 align = DotAlign.End,
-                marquee = Marquee.Off
+                marquee = if (text.isEmpty()) Marquee.Off else Marquee.Auto,
+                scrollSpeed = layout.marqueeColsPerSecond,
             )
         }
         Module(g.info, p) {

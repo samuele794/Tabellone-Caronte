@@ -1,15 +1,13 @@
 package fnm
 
 import androidx.datastore.core.CorruptionException
-import androidx.datastore.core.DataStoreFactory
-import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.core.okio.OkioSerializer
-import androidx.datastore.core.okio.OkioStorage
+import cache.ioDispatcher
+import cache.jsonDataStore
 import debuglog.DebugLog
 import fnm.FnmKeyStore.Companion.RETRY
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
@@ -20,9 +18,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import okio.BufferedSink
 import okio.BufferedSource
-import okio.FileSystem
 import okio.IOException
-import okio.Path.Companion.toPath
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
@@ -45,13 +41,9 @@ class FnmKeyStore(
     private val defaultPassphrase: String = DEFAULT_PASSPHRASE,
 ) : AutoCloseable {
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = CoroutineScope(ioDispatcher + SupervisorJob())
 
-    private val store = DataStoreFactory.create(
-        storage = OkioStorage(FileSystem.SYSTEM, KeySerializer) { path.toPath() },
-        corruptionHandler = ReplaceFileCorruptionHandler { KeyData() },
-        scope = scope,
-    )
+    private val store = jsonDataStore(path, KeySerializer, scope)
 
     private val refresh = Mutex()
     private var lastRefresh: Instant? = null

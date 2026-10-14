@@ -1,0 +1,14 @@
+# Solo i sorgenti servono alla build: niente output, cache, segreti o file pesanti.
+.git
+.gradle
+.kotlin
+.idea
+**/build
+**/.DS_Store
+local.properties
+*.jks
+androidApp/release
+MAS.pdf
+preview.png
+Dockerfile
+.dockerignore

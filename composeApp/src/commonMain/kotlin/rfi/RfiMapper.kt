@@ -23,6 +23,7 @@ class RfiMapper {
         destination = train.station,
         time = train.time,
         delayMinutes = train.delayMinutes,
+        delayText = train.delayText,
         // Le note seguono le fermate nella stessa colonna.
         info = (listOf(train.info) + train.notes).filter { it.isNotBlank() }.joinToString(" - "),
         platform = train.platform,

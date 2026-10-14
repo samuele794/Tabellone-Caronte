@@ -36,6 +36,8 @@ class RfiTrain(
     val notes: List<String> = emptyList(),
     /** Treno cancellato/soppresso, se il monitor lo segnala nella cella del ritardo o nelle info. */
     val cancelled: Boolean = false,
+    /** Testo della cella del ritardo quando non è un numero ("RITARDO", "Cancellato"); vuoto altrimenti. */
+    val delayText: String = "",
 ) {
     override fun toString() =
         "RfiTrain($carrier $category $number → $station $time +$delayMinutes bin=$platform flashing=$flashing cancelled=$cancelled)"

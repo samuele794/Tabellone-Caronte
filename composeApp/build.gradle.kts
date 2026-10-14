@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
@@ -16,6 +18,15 @@ kotlin {
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
         androidResources { enable = true }
+    }
+
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        outputModuleName = "departureBoard"
+        browser {
+            commonWebpackConfig { outputFileName = "departureBoard.js" }
+        }
+        binaries.executable()
     }
 
     sourceSets {
@@ -40,6 +51,12 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
+        }
+        wasmJsMain.dependencies {
+            implementation(libs.ktor.client.js)
+            implementation(libs.kotlinx.browser)
+            // Fusi orari per kotlinx-datetime (TimeZone.of("Europe/Rome")).
+            implementation(npm("@js-joda/timezone", "2.22.0"))
         }
         jvmTest.dependencies {
             implementation(libs.kotlin.test)

@@ -67,6 +67,46 @@ class RfiParserTest {
     }
 
     @Test
+    fun `ritardo scritto a parole al posto dei minuti`() {
+        val html = """
+            <html><body>
+            <table><tbody id="bodyTabId">
+            <tr name="treno" id="1">
+                <td id="RTreno">2615</td>
+                <td id="RRitardo" class="Ritardo_classtd" headers="HRitardo" scope="row">
+                    RITARDO
+                </td>
+            </tr>
+            <tr name="treno" id="2">
+                <td id="RTreno">2617</td>
+                <td id="RRitardo">
+                    25
+                </td>
+            </tr>
+            </tbody></table>
+            </body></html>
+        """.trimIndent()
+
+        val (words, minutes) = RfiParser.parseBoard(html, BoardMode.Departures).trains
+
+        assertNull(words.delayMinutes)
+        assertEquals("RITARDO", words.delayText)
+        assertFalse(words.cancelled)
+        assertEquals(25, minutes.delayMinutes)
+        assertEquals("", minutes.delayText)
+        assertEquals("RITARDO", RfiMapper().departure(words).delayText)
+    }
+
+    @Test
+    fun `cella del ritardo vuota o cancellato`() {
+        val firenze = RfiParser.parseBoard(Fixtures.firenzePartenze, BoardMode.Departures).trains
+
+        assertEquals("Cancellato", firenze.first { it.number == "18377" }.delayText)
+        assertTrue(firenze.filter { !it.cancelled && it.delayMinutes == null }
+            .all { it.delayText == "" })
+    }
+
+    @Test
     fun `avvisi della barra gialla`() {
         val html = """
             <html><body>

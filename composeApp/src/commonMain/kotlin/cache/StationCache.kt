@@ -1,19 +1,14 @@
 package cache
 
 import androidx.datastore.core.CorruptionException
-import androidx.datastore.core.DataStoreFactory
-import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.core.okio.OkioSerializer
-import androidx.datastore.core.okio.OkioStorage
 import debuglog.DebugLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
-import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.DateTimePeriod
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
@@ -21,9 +16,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okio.BufferedSink
 import okio.BufferedSource
-import okio.FileSystem
 import okio.IOException
-import okio.Path.Companion.toPath
 import rfi.Station
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -43,13 +36,9 @@ class StationCache(
     private val timeZone: TimeZone = TimeZone.currentSystemDefault(),
 ) : AutoCloseable {
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = CoroutineScope(ioDispatcher + SupervisorJob())
 
-    private val store = DataStoreFactory.create(
-        storage = OkioStorage(FileSystem.SYSTEM, StationCacheSerializer) { path.toPath() },
-        corruptionHandler = ReplaceFileCorruptionHandler { StationCacheData() },
-        scope = scope,
-    )
+    private val store = jsonDataStore(path, StationCacheSerializer, scope)
 
     /**
      * Elenco di [source]: dalla cache se non è scaduto, altrimenti da [fetch], salvandolo.
@@ -87,7 +76,7 @@ class StationCache(
     }
 
     /** Libera il file: al ritorno se ne può aprire subito un altro [StationCache]. */
-    override fun close() = runBlocking { scope.coroutineContext.job.cancelAndJoin() }
+    override fun close() = blockingClose { scope.coroutineContext.job.cancelAndJoin() }
 
     companion object {
         const val TAG = "CacheStazioni"

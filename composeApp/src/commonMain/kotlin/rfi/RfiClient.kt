@@ -19,6 +19,8 @@ import io.ktor.http.isSuccess
 class RfiClient(
     private val baseUrl: String = DEFAULT_BASE_URL,
     private val httpClient: HttpClient = HttpClient(),
+    /** null per non mandarlo: nel browser non si può impostare, lo aggiunge il proxy. */
+    private val userAgent: String? = USER_AGENT,
 ) : AutoCloseable {
 
     private val http = httpClient.config {
@@ -27,7 +29,7 @@ class RfiClient(
             connectTimeoutMillis = 10_000
         }
         defaultRequest {
-            headers.append(HttpHeaders.UserAgent, USER_AGENT)
+            userAgent?.let { headers.append(HttpHeaders.UserAgent, it) }
             headers.append(HttpHeaders.AcceptLanguage, "it")
         }
     }

@@ -1,14 +1,13 @@
 package live
 
 import androidx.datastore.core.CorruptionException
-import androidx.datastore.core.DataStoreFactory
-import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.core.okio.OkioSerializer
-import androidx.datastore.core.okio.OkioStorage
 import cache.StationSource
+import cache.blockingClose
+import cache.ioDispatcher
+import cache.jsonDataStore
 import debuglog.DebugLog
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
@@ -17,14 +16,11 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okio.BufferedSink
 import okio.BufferedSource
-import okio.FileSystem
 import okio.IOException
-import okio.Path.Companion.toPath
 import rfi.Station
 
 /** Fornitore e stazione scelti per il tabellone. */
@@ -60,13 +56,9 @@ data class BoardSettings(
  */
 class SettingsStore(path: String) : AutoCloseable {
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = CoroutineScope(ioDispatcher + SupervisorJob())
 
-    private val store = DataStoreFactory.create(
-        storage = OkioStorage(FileSystem.SYSTEM, SettingsSerializer) { path.toPath() },
-        corruptionHandler = ReplaceFileCorruptionHandler { BoardSettings() },
-        scope = scope,
-    )
+    private val store = jsonDataStore(path, SettingsSerializer, scope)
 
     /** Impostazioni ancora da scrivere: se se ne accumulano, si scrivono solo le ultime. */
     private val pending = Channel<BoardSettings>(Channel.CONFLATED)
@@ -102,7 +94,7 @@ class SettingsStore(path: String) : AutoCloseable {
      */
     override fun close() {
         pending.close()
-        runBlocking {
+        blockingClose {
             writer.join()
             scope.coroutineContext.job.cancelAndJoin()
         }
