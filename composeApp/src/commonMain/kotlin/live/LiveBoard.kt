@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -26,6 +28,7 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -35,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -74,23 +78,25 @@ import kotlinx.datetime.format.DayOfWeekNames
 import kotlinx.datetime.format.MonthNames
 import kotlinx.datetime.format.char
 import kotlinx.datetime.toLocalDateTime
+import live.LiveBoardState.Companion.DEFAULT_REFRESH
 import rfi.BoardMode
 import rfi.RfiMapper
 import rfi.Station
 import kotlin.math.ceil
+import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
 import kotlin.time.TimeSource
 
-/** Ogni quanto riscaricare il tabellone (per FNM: i dettagli dei treni). */
-private val REFRESH_MILLIS = 30.seconds
-
 /**
  * Stato del tabellone collegato a uno dei [sources] (RFI, FNM…), scelto insieme alla stazione.
  * Con un [announcer] le variazioni tra un aggiornamento e il successivo vengono annunciate a voce;
- * con una [stationCache] gli elenchi stazioni si scaricano al più una volta al mese.
+ * con una [stationCache] gli elenchi stazioni si scaricano al più una volta al mese; con un
+ * [settingsStore] stazione, scorrimento, annunci e intervalli di aggiornamento si ritrovano alla
+ * riapertura dell'app.
  */
 @Stable
 class LiveBoardState(
@@ -99,6 +105,7 @@ class LiveBoardState(
     initial: Station = sources.getValue(initialSource).defaultStation,
     private val announcer: Announcer? = null,
     private val stationCache: StationCache? = null,
+    private val settingsStore: SettingsStore? = null,
 ) {
     private val mapper = RfiMapper()
     private val announcements = BoardAnnouncements()
@@ -119,15 +126,104 @@ class LiveBoardState(
     var station by mutableStateOf(initial)
         private set
     var mode by mutableStateOf(BoardMode.Departures)
-    var autoScroll by mutableStateOf(true)
+    private var autoScrollState by mutableStateOf(true)
     private var announceState by mutableStateOf(true)
+
+    /**
+     * Se le impostazioni salvate sono già state ripristinate (o non c'è niente da ripristinare):
+     * fino ad allora il tabellone non scarica nulla per la stazione iniziale.
+     */
+    var restored by mutableStateOf(settingsStore == null)
+        private set
+
+    /** Impostazioni cambiate prima del ripristino: vincono su quelle salvate. */
+    private val changedBeforeRestore = mutableSetOf<Setting>()
+
+    private enum class Setting { Selection, AutoScroll, Announce, Refresh, ListRefresh }
+
+    /** Intervalli di aggiornamento scelti, per fornitore; chi manca usa [DEFAULT_REFRESH]. */
+    private var refreshIntervals by mutableStateOf<Map<StationSource, Duration>>(emptyMap())
+
+    /** Ogni quanto si riscarica il tabellone di [source] (per FNM: i dettagli dei treni). */
+    fun refreshInterval(source: StationSource = this.source): Duration =
+        refreshIntervals[source] ?: DEFAULT_REFRESH
+
+    /** Cambia l'intervallo dei dettagli, senza andare oltre [maxRefreshInterval]. */
+    fun setRefreshInterval(source: StationSource, interval: Duration) {
+        val max = maxRefreshInterval(source)
+        refreshIntervals += source to if (max == null) interval else interval.coerceAtMost(max)
+        changed(Setting.Refresh)
+    }
+
+    /** Intervallo predefinito dell'elenco treni, per i fornitori che lo riscaricano a parte. */
+    private val defaultListRefresh: Map<StationSource, Duration> =
+        sources.mapNotNull { (source, client) -> client.listRefresh?.let { source to it } }.toMap()
+
+    /** Intervalli dell'elenco treni scelti, per fornitore; chi manca usa il suo predefinito. */
+    private var listRefreshIntervals by mutableStateOf<Map<StationSource, Duration>>(emptyMap())
+
+    /** Ogni quanto si riscarica l'elenco treni di [source]; null se non lo riscarica a parte. */
+    fun listRefreshInterval(source: StationSource): Duration? =
+        listRefreshIntervals[source] ?: defaultListRefresh[source]
+
+    /** Cambia l'intervallo dell'elenco treni, senza scendere sotto [minListRefreshInterval]. */
+    fun setListRefreshInterval(source: StationSource, interval: Duration) {
+        val min = minListRefreshInterval(source) ?: return
+        applyListRefresh(listRefreshIntervals + (source to interval.coerceAtLeast(min)))
+        changed(Setting.ListRefresh)
+    }
+
+    /**
+     * L'intervallo più lungo per i dettagli di [source]: non oltre l'elenco treni, che non deve
+     * riscaricarsi più spesso dei dettagli (senza un elenco aggiornato non avrebbero treni nuovi
+     * da chiedere). null se il fornitore non riscarica l'elenco a parte.
+     */
+    fun maxRefreshInterval(source: StationSource): Duration? {
+        val list = listRefreshInterval(source) ?: return null
+        return REFRESH_OPTIONS.lastOrNull { it <= list } ?: list
+    }
+
+    /** L'intervallo più breve per l'elenco treni di [source]: non sotto i dettagli; null se non c'è. */
+    fun minListRefreshInterval(source: StationSource): Duration? {
+        if (listRefreshInterval(source) == null) return null
+        val details = refreshInterval(source)
+        return LIST_REFRESH_OPTIONS.firstOrNull { it >= details } ?: details
+    }
+
+    /** Abbassa i dettagli di [source] se superano l'elenco treni; true se li ha cambiati. */
+    private fun clampRefresh(source: StationSource): Boolean {
+        val max = maxRefreshInterval(source) ?: return false
+        if (refreshInterval(source) <= max) return false
+        refreshIntervals += source to max
+        return true
+    }
+
+    /** Tiene gli intervalli dei soli fornitori che li supportano e li passa ai fornitori. */
+    private fun applyListRefresh(intervals: Map<StationSource, Duration>) {
+        listRefreshIntervals = intervals.filterKeys { it in defaultListRefresh }
+        listRefreshIntervals.forEach { (source, interval) ->
+            sources.getValue(source).listRefresh = interval
+        }
+        // Il conto alla rovescia dell'elenco si sposta subito, senza aspettare il prossimo giro.
+        if (nextListRefreshAt != null) nextListRefreshAt =
+            sources.getValue(source).nextListRefreshAt
+    }
 
     /** Cambia fornitore e stazione insieme. */
     fun select(source: StationSource, station: Station) {
         require(source in sources) { "Fornitore $source non disponibile" }
         this.source = source
         this.station = station
+        changed(Setting.Selection)
     }
+
+    /** Scorrimento automatico delle righe che non stanno nel tabellone. */
+    var autoScroll: Boolean
+        get() = autoScrollState
+        set(value) {
+            autoScrollState = value
+            changed(Setting.AutoScroll)
+        }
 
     /** Annunci sonori attivi; spegnendoli si interrompe anche quello in corso. */
     var announce: Boolean
@@ -135,7 +231,50 @@ class LiveBoardState(
         set(value) {
             announceState = value
             if (!value) announcer?.clear()
+            changed(Setting.Announce)
         }
+
+    /** Riporta le impostazioni a quelle salvate; dalla seconda volta non fa nulla. */
+    suspend fun restoreSettings() {
+        if (restored) return
+        val saved = settingsStore?.load() ?: BoardSettings()
+        val selection = saved.selection
+        if (selection != null && selection.source in sources && Setting.Selection !in changedBeforeRestore) {
+            source = selection.source
+            station = selection.station
+        }
+        if (Setting.AutoScroll !in changedBeforeRestore) autoScrollState = saved.autoScroll
+        if (Setting.Announce !in changedBeforeRestore) announceState = saved.announce
+        // Per gli intervalli vince, fornitore per fornitore, quello scelto prima del ripristino.
+        val refresh = saved.refreshSeconds.toIntervals(REFRESH_OPTIONS).filterKeys { it in sources }
+        refreshIntervals =
+            if (Setting.Refresh in changedBeforeRestore) refresh + refreshIntervals else refresh
+        val listRefresh = saved.listRefreshSeconds.toIntervals(LIST_REFRESH_OPTIONS)
+        applyListRefresh(
+            if (Setting.ListRefresh in changedBeforeRestore) listRefresh + listRefreshIntervals else listRefresh
+        )
+        // Un file scritto a mano, o un cambio prima del ripristino, può avere i dettagli più
+        // radi dell'elenco: si tiene l'elenco e si abbassano i dettagli.
+        val clamped = defaultListRefresh.keys.map(::clampRefresh).any { it }
+        restored = true
+        if (changedBeforeRestore.isNotEmpty() || clamped) save()
+    }
+
+    private fun changed(setting: Setting) {
+        if (restored) save() else changedBeforeRestore += setting
+    }
+
+    private fun save() {
+        settingsStore?.save(
+            BoardSettings(
+                Selection(source, station),
+                autoScroll,
+                announce,
+                refreshSeconds = refreshIntervals.inSeconds(),
+                listRefreshSeconds = listRefreshIntervals.inSeconds(),
+            )
+        )
+    }
 
     /** Se il tabellone ha un motore per gli annunci sonori. */
     val canAnnounce get() = announcer != null
@@ -207,6 +346,7 @@ class LiveBoardState(
             announcer?.clear()
         }
         loading = true
+        var cancelled = false
         try {
             val board = client.board(station, key.third)
             departures = mapper.departures(board)
@@ -222,28 +362,55 @@ class LiveBoardState(
             updatedAt = localNow()
             error = null
         } catch (e: CancellationException) {
+            cancelled = true
             throw e
         } catch (e: Exception) {
             error = "Aggiornamento non riuscito: ${e.message ?: e::class.simpleName}"
         } finally {
             loading = false
-            lastRefresh = TimeSource.Monotonic.markNow()
+            // Un aggiornamento interrotto (es. intervallo cambiato) non rimanda il prossimo.
+            if (!cancelled) lastRefresh = TimeSource.Monotonic.markNow()
             nextListRefreshAt = client.nextListRefreshAt
         }
     }
+
+    companion object {
+        /** Intervallo di aggiornamento se non se ne è scelto un altro. */
+        val DEFAULT_REFRESH = 30.seconds
+
+        /** Intervalli di aggiornamento tra cui scegliere. */
+        val REFRESH_OPTIONS = listOf(
+            15.seconds, 20.seconds, 30.seconds, 45.seconds,
+            1.minutes, 90.seconds, 2.minutes, 3.minutes, 5.minutes,
+        )
+
+        /** Intervalli di riscaricamento dell'elenco treni tra cui scegliere. */
+        val LIST_REFRESH_OPTIONS = listOf(1, 2, 3, 5, 10, 15, 30).map { it.minutes }
+    }
 }
+
+/** Secondi salvati agganciati all'opzione più vicina, anche se il file è stato scritto a mano. */
+private fun Map<StationSource, Int>.toIntervals(options: List<Duration>): Map<StationSource, Duration> =
+    mapValues { (_, seconds) -> options.minBy { (it - seconds.seconds).absoluteValue } }
+
+private fun Map<StationSource, Duration>.inSeconds(): Map<StationSource, Int> =
+    mapValues { it.value.inWholeSeconds.toInt() }
 
 /** Tabellone live a tutto schermo; stazione, modalità e scorrimento si cambiano dalla rotella. */
 @Composable
 fun LiveBoard(state: LiveBoardState, now: LocalDateTime) {
-    LaunchedEffect(state.source) {
-        if (state.stations(state.source).isEmpty()) state.loadStations()
+    LaunchedEffect(Unit) { state.restoreSettings() }
+    LaunchedEffect(state.source, state.restored) {
+        if (state.restored && state.stations(state.source).isEmpty()) state.loadStations()
     }
-    LaunchedEffect(state.source, state.station.id, state.mode) {
-        state.waitForRefresh(state.nextRefreshIn(REFRESH_MILLIS))
+    val interval = state.refreshInterval()
+    LaunchedEffect(state.source, state.station.id, state.mode, state.restored, interval) {
+        if (!state.restored) return@LaunchedEffect
+        // Cambiando intervallo si attende solo il resto, dall'ultimo aggiornamento.
+        state.waitForRefresh(state.nextRefreshIn(interval))
         while (isActive) {
             state.refresh()
-            state.waitForRefresh(REFRESH_MILLIS)
+            state.waitForRefresh(interval)
         }
     }
     var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -296,9 +463,9 @@ internal fun statusLabel(
     val next = when {
         state.loading -> "aggiornamento…"
         secondsLeft == null -> return last + list
-        state.error != null -> "nuovo tentativo tra $secondsLeft s"
-        listSecondsLeft != null -> "dettagli tra $secondsLeft s"
-        else -> "prossimo tra $secondsLeft s"
+        state.error != null -> "nuovo tentativo tra ${countdown(secondsLeft)}"
+        listSecondsLeft != null -> "dettagli tra ${countdown(secondsLeft)}"
+        else -> "prossimo tra ${countdown(secondsLeft)}"
     }
     return "$last · $next$list"
 }
@@ -333,7 +500,10 @@ private fun SettingsDialog(state: LiveBoardState, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text("Impostazioni") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
                 StationField(state.source, state.station, onClick = { pickStation = true })
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     BoardMode.entries.forEachIndexed { i, mode ->
@@ -362,6 +532,28 @@ private fun SettingsDialog(state: LiveBoardState, onDismiss: () -> Unit) {
                         Switch(checked = state.announce, onCheckedChange = { state.announce = it })
                     }
                 }
+                Text("Aggiornamento", style = MaterialTheme.typography.titleSmall)
+                state.availableSources.forEach { source ->
+                    val listInterval = state.listRefreshInterval(source)
+                    IntervalSlider(
+                        label = if (listInterval == null) source.label else "${source.label} · dettagli treni",
+                        value = state.refreshInterval(source),
+                        options = LiveBoardState.REFRESH_OPTIONS,
+                        onChange = { state.setRefreshInterval(source, it) },
+                        max = state.maxRefreshInterval(source),
+                        hint = listInterval?.let { "Non più di rado dell'elenco treni" },
+                    )
+                    if (listInterval != null) {
+                        IntervalSlider(
+                            label = "${source.label} · elenco treni",
+                            value = listInterval,
+                            options = LiveBoardState.LIST_REFRESH_OPTIONS,
+                            onChange = { state.setListRefreshInterval(source, it) },
+                            min = state.minListRefreshInterval(source),
+                            hint = "Non più spesso dei dettagli treni",
+                        )
+                    }
+                }
                 state.error?.let {
                     Text(
                         it,
@@ -383,6 +575,67 @@ private fun SettingsDialog(state: LiveBoardState, onDismiss: () -> Unit) {
             },
             onDismiss = { pickStation = false },
         )
+    }
+}
+
+/**
+ * Cursore a scatti tra tutte le [options], che però si ferma a [min] e [max]: oltre non prosegue.
+ * Durante il trascinamento cambia solo l'etichetta, il valore arriva a [onChange] al rilascio
+ * (così il ciclo di aggiornamento non riparte a ogni scatto).
+ */
+@Composable
+private fun IntervalSlider(
+    label: String,
+    value: Duration,
+    options: List<Duration>,
+    onChange: (Duration) -> Unit,
+    min: Duration? = null,
+    max: Duration? = null,
+    hint: String? = null,
+) {
+    val allowed = allowedIndices(options, min, max)
+    var index by remember(value, options) {
+        mutableIntStateOf(
+            options.indexOf(value).coerceAtLeast(0)
+        )
+    }
+    Column {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                intervalLabel(options.getOrElse(index) { value }),
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+        hint?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        Slider(
+            value = index.toFloat(),
+            onValueChange = { index = it.roundToInt().coerceIn(allowed) },
+            valueRange = 0f..options.lastIndex.toFloat(),
+            steps = options.size - 2,
+            onValueChangeFinished = { if (options[index] != value) onChange(options[index]) },
+        )
+    }
+}
+
+/** Posizioni di [options] raggiungibili tra [min] e [max] (inclusi); tutte se non ci sono limiti. */
+internal fun allowedIndices(options: List<Duration>, min: Duration?, max: Duration?): IntRange {
+    val first = if (min == null) 0 else options.indexOfFirst { it >= min }.takeIf { it >= 0 }
+        ?: options.lastIndex
+    val last =
+        if (max == null) options.lastIndex else options.indexOfLast { it <= max }.takeIf { it >= 0 }
+            ?: 0
+    return first..maxOf(first, last)
+}
+
+/** "45 s", "1 min", "1 min 30 s". */
+internal fun intervalLabel(interval: Duration): String {
+    val minutes = interval.inWholeMinutes
+    val seconds = interval.inWholeSeconds % 60
+    return when {
+        minutes == 0L -> "$seconds s"
+        seconds == 0L -> "$minutes min"
+        else -> "$minutes min $seconds s"
     }
 }
 

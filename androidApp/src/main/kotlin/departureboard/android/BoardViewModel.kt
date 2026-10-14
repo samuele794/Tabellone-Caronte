@@ -8,6 +8,7 @@ import fnm.FnmBoardSource
 import fnm.FnmClient
 import fnm.FnmKeyStore
 import live.LiveBoardState
+import live.SettingsStore
 import rfi.RfiBoardSource
 import rfi.RfiClient
 import tts.AndroidSoundPlayer
@@ -21,6 +22,8 @@ import java.io.File
 class BoardViewModel(app: Application) : AndroidViewModel(app) {
     private val stationCache =
         StationCache(File(app.filesDir, "datastore/stations.json").absolutePath)
+    private val settingsStore =
+        SettingsStore(File(app.filesDir, "datastore/settings.json").absolutePath)
     private val fnmClient = FnmClient()
     private val sources = listOf(
         RfiBoardSource(RfiClient()),
@@ -34,11 +37,17 @@ class BoardViewModel(app: Application) : AndroidViewModel(app) {
     ).associateBy { it.source }
     private val announcer = Announcer(AndroidSpeechEngine(app), AndroidSoundPlayer(app))
 
-    val state = LiveBoardState(sources, announcer = announcer, stationCache = stationCache)
+    val state = LiveBoardState(
+        sources,
+        announcer = announcer,
+        stationCache = stationCache,
+        settingsStore = settingsStore,
+    )
 
     override fun onCleared() {
         announcer.close()
         stationCache.close()
+        settingsStore.close()
         sources.values.forEach { it.close() }
     }
 }

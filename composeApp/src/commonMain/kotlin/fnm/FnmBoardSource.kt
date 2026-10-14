@@ -22,6 +22,7 @@ import rfi.BoardMode
 import rfi.RfiBoard
 import rfi.Station
 import kotlin.time.Clock
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 import kotlin.time.TimeSource
@@ -30,8 +31,9 @@ import kotlin.time.TimeSource
  * Tabellone FNM da trenord.it.
  *
  * L'elenco dei treni della stazione (`station-details`) è lento e cambia solo con l'orario, quindi
- * si riscarica ogni [LIST_REFRESH]; a ogni [board] si chiedono invece i dettagli dei primi
- * [MAX_TRAINS] treni (ritardo, binario, soppressione): dal BFF, o se non va dall'HTML.
+ * si riscarica ogni [listRefresh] (predefinito [LIST_REFRESH]); a ogni [board] si chiedono invece
+ * i dettagli dei primi [MAX_TRAINS] treni (ritardo, binario, soppressione): dal BFF, o se non va
+ * dall'HTML.
  *
  * L'elenco toglie i treni all'orario programmato anche se sono in ritardo: quelli che secondo
  * l'ultimo dettaglio non sono ancora partiti restano finché il dettaglio non li dà per partiti.
@@ -49,9 +51,17 @@ class FnmBoardSource(
     private var lists: FnmStationLists? = null
     private var listStation: String? = null
     private var listFetchedAt: Instant? = null
+    private var listFetchedMark: TimeSource.Monotonic.ValueTimeMark? = null
 
-    override var nextListRefreshAt: TimeSource.Monotonic.ValueTimeMark? = null
-        private set
+    override var listRefresh: Duration? = LIST_REFRESH
+        set(value) {
+            field = value ?: LIST_REFRESH
+        }
+
+    private val listInterval get() = listRefresh ?: LIST_REFRESH
+
+    override val nextListRefreshAt: TimeSource.Monotonic.ValueTimeMark?
+        get() = listFetchedMark?.plus(listInterval)
 
     /** Treni ancora in corsa secondo l'ultimo dettaglio, per stazione e modalità. */
     private val alive = HashMap<Pair<String, BoardMode>, Map<String, FnmListTrain>>()
@@ -102,12 +112,12 @@ class FnmBoardSource(
         )
     }
 
-    /** Elenco della stazione: lo stesso per [LIST_REFRESH], se riscaricarlo fallisce si tiene il vecchio. */
+    /** Elenco della stazione: lo stesso per [listRefresh], se riscaricarlo fallisce si tiene il vecchio. */
     private suspend fun stationLists(station: Station): FnmStationLists {
         val now = clock.now()
         val cached = lists?.takeIf { listStation == station.id }
         val fetchedAt = listFetchedAt
-        if (cached != null && fetchedAt != null && now - fetchedAt < LIST_REFRESH) return cached
+        if (cached != null && fetchedAt != null && now - fetchedAt < listInterval) return cached
         if (listStation != station.id) alive.clear()
 
         val fresh = try {
@@ -122,7 +132,7 @@ class FnmBoardSource(
         lists = fresh
         listStation = station.id
         listFetchedAt = now
-        nextListRefreshAt = TimeSource.Monotonic.markNow() + LIST_REFRESH
+        listFetchedMark = TimeSource.Monotonic.markNow()
         return fresh
     }
 
@@ -178,7 +188,7 @@ class FnmBoardSource(
         /** Treni di cui si chiede il dettaglio, e quindi righe mostrate al più. */
         const val MAX_TRAINS = 15
 
-        /** Ogni quanto si riscarica l'elenco dei treni della stazione. */
+        /** Ogni quanto si riscarica l'elenco dei treni della stazione, se non scelto altrimenti. */
         val LIST_REFRESH = 5.minutes
 
         private const val PARALLEL_REQUESTS = 6

@@ -16,6 +16,7 @@ import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -124,6 +125,29 @@ class FnmBoardSourceTest {
         clock.advance(1.minutes)
         source.board(domodossola, BoardMode.Departures)
         assertEquals(2, listRequests)
+    }
+
+    @Test
+    fun `l'intervallo dell'elenco si può cambiare`() = runBlocking {
+        source.listRefresh = 2.minutes
+        source.board(domodossola, BoardMode.Departures)
+        clock.advance(1.minutes)
+        source.board(domodossola, BoardMode.Departures)
+        assertEquals(1, listRequests)
+
+        clock.advance(1.minutes)
+        source.board(domodossola, BoardMode.Departures)
+        assertEquals(2, listRequests)
+    }
+
+    @Test
+    fun `cambiando intervallo si sposta il prossimo riscaricamento dell'elenco`() = runBlocking {
+        source.board(domodossola, BoardMode.Departures)
+        val before = assertNotNull(source.nextListRefreshAt)
+
+        source.listRefresh = 10.minutes
+
+        assertEquals(5.minutes, assertNotNull(source.nextListRefreshAt) - before)
     }
 
     @Test

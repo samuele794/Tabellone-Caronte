@@ -4,6 +4,7 @@ import cache.StationSource
 import rfi.BoardMode
 import rfi.RfiBoard
 import rfi.Station
+import kotlin.time.Duration
 import kotlin.time.TimeSource
 
 /**
@@ -25,4 +26,12 @@ interface BoardSource : AutoCloseable {
      * aggiornano più di rado dei dettagli; null se si scarica tutto a ogni aggiornamento.
      */
     val nextListRefreshAt: TimeSource.Monotonic.ValueTimeMark? get() = null
+
+    /**
+     * Ogni quanto riscaricare l'elenco dei treni, per i fornitori che lo fanno più di rado dei
+     * dettagli; null se non lo fanno, e allora assegnarlo non fa nulla.
+     */
+    var listRefresh: Duration?
+        get() = null
+        set(_) {}
 }

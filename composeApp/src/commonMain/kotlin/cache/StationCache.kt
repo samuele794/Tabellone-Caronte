@@ -10,8 +10,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.job
+import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.DateTimePeriod
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
@@ -84,7 +86,8 @@ class StationCache(
         }
     }
 
-    override fun close() = scope.cancel()
+    /** Libera il file: al ritorno se ne può aprire subito un altro [StationCache]. */
+    override fun close() = runBlocking { scope.coroutineContext.job.cancelAndJoin() }
 
     companion object {
         const val TAG = "CacheStazioni"

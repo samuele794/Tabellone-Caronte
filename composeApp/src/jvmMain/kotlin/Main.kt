@@ -32,6 +32,7 @@ import fnm.FnmKeyStore
 import kotlinx.coroutines.runBlocking
 import live.LiveBoard
 import live.LiveBoardState
+import live.SettingsStore
 import live.rememberNow
 import org.jetbrains.skia.EncodedImageFormat
 import rfi.BoardMode
@@ -65,6 +66,7 @@ fun main(args: Array<String>) {
     }
     val dataDir = File(System.getProperty("user.home"), ".departure-board")
     val stationCache = StationCache(File(dataDir, "stations.json").absolutePath)
+    val settingsStore = SettingsStore(File(dataDir, "settings.json").absolutePath)
     val fnmClient = FnmClient()
     val sources = listOf(
         RfiBoardSource(RfiClient()),
@@ -77,11 +79,19 @@ fun main(args: Array<String>) {
     System.setProperty("skiko.fps.enabled", "true")
     application {
         val state =
-            remember { LiveBoardState(sources, announcer = announcer, stationCache = stationCache) }
+            remember {
+                LiveBoardState(
+                    sources,
+                    announcer = announcer,
+                    stationCache = stationCache,
+                    settingsStore = settingsStore,
+                )
+            }
         Window(
             onCloseRequest = {
                 announcer.close()
                 stationCache.close()
+                settingsStore.close()
                 sources.values.forEach { it.close() }
                 exitApplication()
             },
