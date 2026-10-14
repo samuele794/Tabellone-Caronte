@@ -1,16 +1,19 @@
 pluginManagement {
     repositories {
+        google()
         gradlePluginPortal()
         mavenCentral()
-        google()
     }
 }
 
 dependencyResolutionManagement {
     repositories {
-        mavenCentral()
         google()
+        mavenCentral()
     }
 }
 
 rootProject.name = "departure-board"
+
+include(":composeApp")
+include(":androidApp")

@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+
+
+<html lang="it">
+<head>
+    <meta charset="utf-8"/>
+
+    <meta name="viewport" content="width=device-width"/>
+
+    <title>Stazione di MILANO CENTRALE</title>
+    <link rel="stylesheet" type="text/css"
+          href="/ArriviPartenze/Content/themes/base/jquery-ui.min.css">
+    <!-- Mobile -->
+    <link rel="stylesheet" type="text/css" media="screen and (max-device-width: 601px)"
+          href="/ArriviPartenze/Content/Mobile/CommonStyle.css">
+    <link rel="stylesheet" type="text/css" media="screen and (max-device-height: 601px)"
+          href="/ArriviPartenze/Content/Mobile/CommonStyle.css">
+
+    <!-- End Mobile -->
+    <!-- PC -->
+    <link rel="stylesheet" type="text/css"
+          media="(min-device-width: 601px) and (min-device-height: 601px) "
+          href="/ArriviPartenze/Content/CommonStyle.css">
+    <!-- PC -->
+    <!-- link rel="stylesheet" type="text/css" media="screen and (max-device-width: 480px)" href="~/Content/APStyle.mobile.css" />-->
+
+
+    <link rel="stylesheet" type="text/css"
+          media="(min-device-width: 801px) and (min-device-height: 601px) "
+          href="/ArriviPartenze/Content/MonitorStyleBase.css"/>
+    <link rel="stylesheet" type="text/css" media="screen and (max-device-width:801px) "
+          href="/ArriviPartenze/Content/Mobile/MonitorStyleBase.css"/>
+    <link rel="stylesheet" type="text/css" media="screen and (max-device-height:601px) "
+          href="/ArriviPartenze/Content/Mobile/MonitorStyleBase.css"/>
+    <link rel="stylesheet" type="text/css"
+          media="(min-device-width: 801px) and (min-device-height: 601px) "
+          href="/ArriviPartenze/Content/MonitorStyle.css"/>
+
+    <link rel="stylesheet" type="text/css" media="screen and (max-device-width:801px) "
+          href="/ArriviPartenze/Content/Mobile/MonitorStyle.css"/>
+    <link rel="stylesheet" type="text/css" media="screen and (max-device-height:601px) "
+          href="/ArriviPartenze/Content/Mobile/MonitorStyle.css"/>
+
+
+    <script src="/ArriviPartenze/Scripts/jquery-3.3.1.min.js"></script>
+
+
+    <script src="/ArriviPartenze/Scripts/jquery-ui-1.12.1.min.js"></script>
+    <script src="/ArriviPartenze/Scripts/APScript.js"></script>
+    <script src="/ArriviPartenze/Scripts/Monitor.js"></script>
+
+    <!--  <script src="~/Scripts/Monitor.js"></script>-->
+
+
+</head>
+<body>
+<div class="barraLingua">
+
+
+    <a href="/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1728&amp;arrivals=False"
+       aria-label="Sito in italiano">It</a>
+    <a href="/ArriviPartenze/en/ArrivalsDepartures/Monitor?placeId=1728&amp;arrivals=False"
+       aria-label="English web site">En</a>
+    <a href="/ArriviPartenze/fr/ArrivalsDepartures/Monitor?placeId=1728&amp;arrivals=False"
+       aria-label="Sito in italiano">Fr</a>
+    <a href="/ArriviPartenze/de/ArrivalsDepartures/Monitor?placeId=1728&amp;arrivals=False"
+       aria-label="English web site">De</a>
+
+</div>
+<div style="width:100%">
+
+</div>
+
+
+<script>
+    window.rootDir = "/ArriviPartenze/";
+    window.config = {"PremiumTimeRefresh":0}
+    window.isInternetExplorer = isIE();
+
+</script>
+
+
+<!--<div><span id="logo RFI" class="rfi"></span></div>-->
+
+
+<div class="lastUpdate" id="lastUpdateId">
+    <span class="labellastupdate">
+        <label id="UltimoaggiData">
+            MONITOR ARRIVI &amp; PARTENZE <span class="italic"> LIVE</span> <span class="acapo">
+                <span class="normal"> aggiornato il  </span> 13/10/2026 <span class="normal"> alle ore  </span> 23:59:46
+                <a class="focus aggiorna"
+                   tabindex="1"
+                   title="Aggiorna tabella"
+                   href="/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1728&amp;arrivals=False">
+                    <img class="aggiornaImg" src="/ArriviPartenze/Resources/Images/aggiorna.svg"
+                         alt="Aggiorna"/>
+                </a>
+            </span>
+
+        </label>
+    </span>
+    <img class="logorfi" src="/ArriviPartenze/Resources/Images/logo rfi.png" alt="Logo RFI"/>
+
+
+</div>
+
+
+<h1 class="nomestazione" id="nomeStazioneId">
+    MILANO CENTRALE
+</h1>
+
+
+<div id="barrabottoniId" class="barrabottoni">
+
+
+    <a class="pulsanteTab pulsanteTabGrigio"
+       tabindex="1"
+       href="./Monitor?placeId=1728&amp;arrivals=True"
+       aria-label="Vai a tabella  Arrivi"
+       title="Vai a tabella  Arrivi">Arrivi</a>
+
+    <span class="pulsanteTab pulsanteTabGiallo" role="heading"
+          aria-label="Vai a tabella  Partenze">Partenze</span>
+
+
+</div>
+
+<table class="monitors" id="monitor" aria-label="testo">
+    <caption aria-label="Elenco dei treni in partenza nella stazione di MILANO CENTRALE">
+
+
+    </caption>
+    <thead id="headerTabId">
+
+    <tr>
+        <th class="Vettore_classth Vettore_classth_Part" id="HVettore" scope="col">Vettore</th>
+        <th class="Categoria_classth Categoria_classth_Part" id="HCategoria" scope="col">Categoria
+        </th>
+        <th class="Treno_classth Treno_classth_Part" id="HTreno" abbr="treno" scope="col">Treno</th>
+        <th class="Stazione_classth Stazione_classth_Part" id="HStazione" scope="col">Destinazione
+        </th>
+        <th class="Orario_classth Orario_classth_Part" id="HOrario" scope="col">Orario</th>
+        <th class="Ritardo_classth Ritardo_classth_Part" id="HRitardo" scope="col">Ritardo</th>
+        <th class="Binario_classth Binario_classth_Part" id="HBinario" scope="col">Binario</th>
+        <th class="ExLampeggio_classth ExLampeggio_classth_Part" id="HInArrivo" scope="col">In
+            partenza
+        </th>
+        <th aria-label="Informazioni" class="Dettagli_classth Dettagli_classth_Part" id="HDettagli"
+            scope="col">
+            <div class="widescreen">Informazioni</div>
+            <div class="mobilescreen">Info</div>
+        </th>
+    </tr>
+    </thead>
+    <tbody id="bodyTabId">
+
+
+    <tr id="1247A" name="treno" class="row yellowRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+
+            <img alt="TRENORD" class="logoCliente"
+                 src="data:image/gif;base64,R0lGODlhuAA8APcAAFFRUVhkWlViV1JRUlJQUlFQUVFPUVBNUFBNT1JQUVJPUVNPUlRPU1JNUVFMUFNNUlROVFZRVlZSVlRRVFRSVFNRU09NT1BPUE9OUE9NUlBPUk5NUE9PVEtLTlFRUk9QU01PU0tNUU5RVVBSVExQU09SVE9SU01PT1FSUlBRUUtRTVFUUk9SUFJWU1VjWEhRSklfTUpgTktbTlVgV0xWTllkW1diWVBaUlReVk9UUE5TT01STlRZVVFWUj5RQURXR0lbTE5fUVNZVFVbVlBlU1dtWj1MP0taTUlXS0tZTUhVSk9cUUxTTVFYUlRbVT1UQFBrU0hfS1VuWEVVR1NlVVBZUVRdVU1VTktTTE9XUE5WT1NbVFZeV1R0V0BWQkJYRERaRkxiTlBjUlhrWkVPRk9aUE5ZT1JdU0tVTEpUS1ZhV1NeVE9ZUFNdVDVON0xmTj9OQElYSkdVSEpYS0hVSVdmWEdTSEpWS1lnWk1ZTlZiVzFWMzpaPENaRERWRUdZSERVRVBiUVFhUlNjVCtNKy9KLzVQNThSODtRO0RYRDxNPEFSQT9PP0tdS0JRQkZVRkVSRURPRE1YTVFbUUlSSU1WTVJbUkdPR0xUTElQSVBXUEpQSkhOSEdNR1NZU0hNSE9UT01RTUtPS1FUUU9ST05RTkxPTFNVU0lLSVFSUVBRUFBTT1ZeU11pWFBVTVJaTVJVUE9STWl4XmBqWVdcU1ZcUU9eQFVZUVhcVFJTUVtjUltcWU5OTVpZVVZVUV5ZTVxWSWFbT2BZTlJQTWhZRV1SQ2xZQl5OOmBVSFdSTFdRSlZQSVVLQVhSTFNPS1dTT1RTUlZKQFBIQl9FNV1UT1BIRU9NTVBPT1JSUlBQUE9PT////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACH5BAEAANsALAAAAAC4ADwAAAj/ALcJHEiwoMGDCBMqXMiwocOHECNKnEixosWLGDNq3Mixo8ePIEOKHEmypMmTKFOqXMmypcuXMGPKnEmzps2bOHPq3Mmzp8+fQIMKHUq0qNGjSJMqXcq0qdOnUKNKnUq1qtWrKV+tIgCgq9evBbDVKhjDhoCzaNOqXcu27ak8Bm3UCEC3rt27ePPabUHg4SVSavQIHky4sOHDgtVkMShlhgscBWiUiTgqA9evmL0eAEDwRYMDoEOLHk26tOkCBs4QpPPZtGvQCCzIRkA6djYAKhaqClWgQgEEwIEfCE68uPHjCAAcsEOQlIMDBgAUmD6KicNR2LIVyJy5wAZZA1Vt/+deYEDX8dzTpyegZOAdFjriy59Pf/4OFl5L7di/X4cqrxU4AMZBOawCQAUVpJLZABWAdYF66j04QCoEpWKeeecZQMAAoyTB0C7QABAdhF254lApAxQwCmcVYZhNRl80OMEeCOkgHQC5GMTEZap0chAjpjQonScTrbFCASgMRIQBA5SSiUA85JCDghrmyFAruWAAYQGwPIQFAQYIcRELXGmURgUD6KBQI10ZIAZBppBy4AQLKUIBAAgUQVETCrAw0BYGJDDKQSlgIx0BSDTEipbpHUDLQykeIMhFTCwwaEahMCjHQvgVkANBCxhQASUNRdBVCxRdMEAaA9mYAA0Jqf+wwIFYNMRBCukVcItDQWz3okVpDGBAExnFwdUEXizk1QUDqZHNAH01REqKi0mkxwUE5CbQbewpBAOuBSxB0C/SGNNLMMckI1AHGpD30BUJFLDKQTtgSKJXBrwx0L2YlSnQIxv+qpAOA2TDw0CbReCIQ7cdEMhAR/ILwAWCDtTGiAwd8QCOBIHgwQfZfFCCCMIIVMcGmHH50A4iEmkQimAZIPPMMgNAgAKaDGSsxF0RgMlAmBBAgHULUTDABTMMZJ4EhDR0iKkGEIRez6XdlgADPwykyXbYNFQJAagJVMwHmYUAjEAmTE2AiQ51pQ0VB43o1ShNVNHDKHjjXYAOWhD/tCPPNs8xkDYDMNDHQoZMUN5AUTBZgUORKG7lNjd6lU0OPHAhRAuct5BLAaBcKhCKBNTKUBcGTCfQMmRnJgI129hygr0FsM1QGdEJXBANF4xXQA9QkJRIgwMwVK8CVwzURHmlOGQBNhIYQRAB2Ix3Td/O2wyEQ0cWMATlU38FwjTbSHJZAao8pEUCCXyaUA/nA2DGSHcsMAApDKlCQAU+DGSBhVFjCCQiUAFtHIQJXzFFQ6zAtYcs7wBOIEbruDOCamxjFg8CAAbGciJh3cB440mAASYREh3s7xEL4UODCkCQTZhnAoBYCCKMBgE3IGQUueBKAiiAioVsTQGwcsgY/5KTCmSQAFe5EggSDbCrhuBBO8xqSBNSEcIdBOEjXKlADBUChwlkAxoECYMCuiIBTiBkETuYAINksBAyQGM7A4BG1xCCn1U9ZBAyY8M2mOELAnjgY4YCwMecIRAPHEoXDrEEk9L3ENzdKAHYKwgphCSx4glkCgEznrCqUJBVYAhNpQiFKEWZDQQNQBusasgbEyCdFHzCIC0Yz2XudYHbXEBMA4mGMpphDRR4YBjPGMh2DBCLh+SAAAkAhURGkbo2VUsghTAVz5o0EDRsiGgK2VAFnmAQXjyLegAYgDihNR0WTO5dYOtNDi5BkEmMEXCWc4JD3ggAXEDkPwaY1ERUwWNK6Yiui4CTgCIGIqcK/GEhfhBSQmhwBVHYq309QBVFTvE56RhgDQQNH89YiJWOevSjIA2pSEdK0pKa9KQoTalKV8rSlrr0pTCNqUxnStOa2vSmOM2pTnfK05769KdADeo2AgIAOw== "/>
+
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+            <img alt="Categoria BUS" class="logoCategoria"
+                 src="data:image/gif;base64,R0lGODlhWgAeAIAAAFJSUv///yH5BAEAAAEALAAAAABaAB4AAAKnjIGpi+YPo5y0Wsmy3rx7dVnfSJZcSDXooa7JGrSPDMdA/cL0tdv1fNP1KsNUEFLkHVE51zI0fApxSYxUdPX9tM6skTqpfoXecNlq3nKZYuQ5UnynyeDpvN7Fs81yuOkPWLIVSFioMWiYaIio2PjH6Bj5ASlZefhjmXlJpdnZ5uYZShYqykZa2nVaqaa6qqa0+eqXIcsaW+uwgYtJuzsL4sv7+QocXAAAOw== "/>
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd">1247A</td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+                BERGAMO
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row">00:05</td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" headers="HBinario" scope="row">
+            <div>
+
+                PE
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" headers="HDettagli" scope="row" class="Dettagli_classtd marquee">
+            <button id="btn_202610141247A" tabindex="3"
+                    class="ApriFermateSuccessive focus yellowRow"
+                    onclick="apriFermateSuccessive(&#39;202610141247A&#39;)">
+                <img class="infologo" alt="Maggiori informazioni treno 1247A"
+                     src="/ArriviPartenze/Resources/Images/INFO NERO.png"/>
+            </button>
+            <div class="FermateSuccessivePopupStyle" draggable="true"
+                 id="FermateSuccessive_202610141247A" title="Treno 1247A">
+                <div class="FermateSuccessiveHeader">
+                    <span class="FermateSuccessiveTitolo">Treno 1247A</span>
+                    <button class="FermateSuccessiveBottoneChiudi"
+                            onclick="chiudiInfo(&#39;202610141247A&#39;)">
+                        <img id="Chiudi" class="FermateSuccessiveImgChiudi" alt="{chiudi}"
+                             src="/ArriviPartenze/Resources/Images/x-chiudi.png"/>
+                    </button>
+                </div>
+                <div class="titoloInfoAggiuntive">Fermate successive</div>
+                <div class="testoinfoaggiuntive">
+                    FERMA A:MILANO LAMBRATE (0:19) - PIOLTELLO LIM. (0:36) - TREVIGLIO OVEST (1:01)
+                    - VERDELLO DALMINE (1:18) - BERGAMO (1:41)
+                </div>
+
+            </div>
+
+        </td>
+    </tr>
+    <tr id="1911A" name="treno" class="row greyRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+
+            <img alt="TRENORD" class="logoCliente"
+                 src="data:image/gif;base64,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 "/>
+
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+            <img alt="Categoria BUS" class="logoCategoria"
+                 src="data:image/gif;base64,R0lGODlhWgAeAIAAAP/nhP///yH5BAEAAAEALAAAAABaAB4AAAKnjIGpi+YPo5y0Wsmy3rx7dVnfSJZcSDXooa7JGrSPDMdA/cL0tdv1fNP1KsNUEFLkHVE51zI0fApxSYxUdPX9tM6skTqpfoXecNlq3nKZYuQ5UnynyeDpvN7Fs81yuOkPWLIVSFioMWiYaIio2PjH6Bj5ASlZefhjmXlJpdnZ5uYZShYqykZa2nVaqaa6qqa0+eqXIcsaW+uwgYtJuzsL4sv7+QocXAAAOw== "/>
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd">1911A</td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+                BRESCIA
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row">00:15</td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" headers="HDettagli" scope="row" class="Dettagli_classtd marquee">
+            <button id="btn_202610141911A" tabindex="4" class="ApriFermateSuccessive focus greyRow"
+                    onclick="apriFermateSuccessive(&#39;202610141911A&#39;)">
+                <img class="infologo" alt="Maggiori informazioni treno 1911A"
+                     src="/ArriviPartenze/Resources/Images/INFO BIANCO.png"/>
+            </button>
+            <div class="FermateSuccessivePopupStyle" draggable="true"
+                 id="FermateSuccessive_202610141911A" title="Treno 1911A">
+                <div class="FermateSuccessiveHeader">
+                    <span class="FermateSuccessiveTitolo">Treno 1911A</span>
+                    <button class="FermateSuccessiveBottoneChiudi"
+                            onclick="chiudiInfo(&#39;202610141911A&#39;)">
+                        <img id="Chiudi" class="FermateSuccessiveImgChiudi" alt="{chiudi}"
+                             src="/ArriviPartenze/Resources/Images/x-chiudi.png"/>
+                    </button>
+                </div>
+                <div class="titoloInfoAggiuntive">Fermate successive</div>
+                <div class="testoinfoaggiuntive">
+                    FERMA A:MILANO LAMBRATE (0:32) - PIOLTELLO LIM. (0:49) - MELZO (1:02) - CASSANO
+                    D&#39;&#39;&#39;&#39;ADDA (1:20) - TREVIGLIO (1:32) - VIDALENGO (1:44) - MORENGO
+                    BARIANO (2:00) - ROMANO (2:10) - CIVIDATE-CALCIO (2:26) - CHIARI (2:43) - ROVATO
+                    (2:55) - BRESCIA (3:26)
+                </div>
+
+            </div>
+
+        </td>
+    </tr>
+    <tr id="2349A" name="treno" class="row yellowRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+
+            <img alt="TRENORD" class="logoCliente"
+                 src="data:image/gif;base64,R0lGODlhuAA8APcAAFFRUVhkWlViV1JRUlJQUlFQUVFPUVBNUFBNT1JQUVJPUVNPUlRPU1JNUVFMUFNNUlROVFZRVlZSVlRRVFRSVFNRU09NT1BPUE9OUE9NUlBPUk5NUE9PVEtLTlFRUk9QU01PU0tNUU5RVVBSVExQU09SVE9SU01PT1FSUlBRUUtRTVFUUk9SUFJWU1VjWEhRSklfTUpgTktbTlVgV0xWTllkW1diWVBaUlReVk9UUE5TT01STlRZVVFWUj5RQURXR0lbTE5fUVNZVFVbVlBlU1dtWj1MP0taTUlXS0tZTUhVSk9cUUxTTVFYUlRbVT1UQFBrU0hfS1VuWEVVR1NlVVBZUVRdVU1VTktTTE9XUE5WT1NbVFZeV1R0V0BWQkJYRERaRkxiTlBjUlhrWkVPRk9aUE5ZT1JdU0tVTEpUS1ZhV1NeVE9ZUFNdVDVON0xmTj9OQElYSkdVSEpYS0hVSVdmWEdTSEpWS1lnWk1ZTlZiVzFWMzpaPENaRERWRUdZSERVRVBiUVFhUlNjVCtNKy9KLzVQNThSODtRO0RYRDxNPEFSQT9PP0tdS0JRQkZVRkVSRURPRE1YTVFbUUlSSU1WTVJbUkdPR0xUTElQSVBXUEpQSkhOSEdNR1NZU0hNSE9UT01RTUtPS1FUUU9ST05RTkxPTFNVU0lLSVFSUVBRUFBTT1ZeU11pWFBVTVJaTVJVUE9STWl4XmBqWVdcU1ZcUU9eQFVZUVhcVFJTUVtjUltcWU5OTVpZVVZVUV5ZTVxWSWFbT2BZTlJQTWhZRV1SQ2xZQl5OOmBVSFdSTFdRSlZQSVVLQVhSTFNPS1dTT1RTUlZKQFBIQl9FNV1UT1BIRU9NTVBPT1JSUlBQUE9PT////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACH5BAEAANsALAAAAAC4ADwAAAj/ALcJHEiwoMGDCBMqXMiwocOHECNKnEixosWLGDNq3Mixo8ePIEOKHEmypMmTKFOqXMmypcuXMGPKnEmzps2bOHPq3Mmzp8+fQIMKHUq0qNGjSJMqXcq0qdOnUKNKnUq1qtWrKV+tIgCgq9evBbDVKhjDhoCzaNOqXcu27ak8Bm3UCEC3rt27ePPabUHg4SVSavQIHky4sOHDgtVkMShlhgscBWiUiTgqA9evmL0eAEDwRYMDoEOLHk26tOkCBs4QpPPZtGvQCCzIRkA6djYAKhaqClWgQgEEwIEfCE68uPHjCAAcsEOQlIMDBgAUmD6KicNR2LIVyJy5wAZZA1Vt/+deYEDX8dzTpyegZOAdFjriy59Pf/4OFl5L7di/X4cqrxU4AMZBOawCQAUVpJLZABWAdYF66j04QCoEpWKeeecZQMAAoyTB0C7QABAdhF254lApAxQwCmcVYZhNRl80OMEeCOkgHQC5GMTEZap0chAjpjQonScTrbFCASgMRIQBA5SSiUA85JCDghrmyFAruWAAYQGwPIQFAQYIcRELXGmURgUD6KBQI10ZIAZBppBy4AQLKUIBAAgUQVETCrAw0BYGJDDKQSlgIx0BSDTEipbpHUDLQykeIMhFTCwwaEahMCjHQvgVkANBCxhQASUNRdBVCxRdMEAaA9mYAA0Jqf+wwIFYNMRBCukVcItDQWz3okVpDGBAExnFwdUEXizk1QUDqZHNAH01REqKi0mkxwUE5CbQbewpBAOuBSxB0C/SGNNLMMckI1AHGpD30BUJFLDKQTtgSKJXBrwx0L2YlSnQIxv+qpAOA2TDw0CbReCIQ7cdEMhAR/ILwAWCDtTGiAwd8QCOBIHgwQfZfFCCCMIIVMcGmHH50A4iEmkQimAZIPPMMgNAgAKaDGSsxF0RgMlAmBBAgHULUTDABTMMZJ4EhDR0iKkGEIRez6XdlgADPwykyXbYNFQJAagJVMwHmYUAjEAmTE2AiQ51pQ0VB43o1ShNVNHDKHjjXYAOWhD/tCPPNs8xkDYDMNDHQoZMUN5AUTBZgUORKG7lNjd6lU0OPHAhRAuct5BLAaBcKhCKBNTKUBcGTCfQMmRnJgI129hygr0FsM1QGdEJXBANF4xXQA9QkJRIgwMwVK8CVwzURHmlOGQBNhIYQRAB2Ix3Td/O2wyEQ0cWMATlU38FwjTbSHJZAao8pEUCCXyaUA/nA2DGSHcsMAApDKlCQAU+DGSBhVFjCCQiUAFtHIQJXzFFQ6zAtYcs7wBOIEbruDOCamxjFg8CAAbGciJh3cB440mAASYREh3s7xEL4UODCkCQTZhnAoBYCCKMBgE3IGQUueBKAiiAioVsTQGwcsgY/5KTCmSQAFe5EggSDbCrhuBBO8xqSBNSEcIdBOEjXKlADBUChwlkAxoECYMCuiIBTiBkETuYAINksBAyQGM7A4BG1xCCn1U9ZBAyY8M2mOELAnjgY4YCwMecIRAPHEoXDrEEk9L3ENzdKAHYKwgphCSx4glkCgEznrCqUJBVYAhNpQiFKEWZDQQNQBusasgbEyCdFHzCIC0Yz2XudYHbXEBMA4mGMpphDRR4YBjPGMh2DBCLh+SAAAkAhURGkbo2VUsghTAVz5o0EDRsiGgK2VAFnmAQXjyLegAYgDihNR0WTO5dYOtNDi5BkEmMEXCWc4JD3ggAXEDkPwaY1ERUwWNK6Yiui4CTgCIGIqcK/GEhfhBSQmhwBVHYq309QBVFTvE56RhgDQQNH89YiJWOevSjIA2pSEdK0pKa9KQoTalKV8rSlrr0pTCNqUxnStOa2vSmOM2pTnfK05769KdADeo2AgIAOw== "/>
+
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+            <img alt="Categoria BUS" class="logoCategoria"
+                 src="data:image/gif;base64,R0lGODlhWgAeAIAAAFJSUv///yH5BAEAAAEALAAAAABaAB4AAAKnjIGpi+YPo5y0Wsmy3rx7dVnfSJZcSDXooa7JGrSPDMdA/cL0tdv1fNP1KsNUEFLkHVE51zI0fApxSYxUdPX9tM6skTqpfoXecNlq3nKZYuQ5UnynyeDpvN7Fs81yuOkPWLIVSFioMWiYaIio2PjH6Bj5ASlZefhjmXlJpdnZ5uYZShYqykZa2nVaqaa6qqa0+eqXIcsaW+uwgYtJuzsL4sv7+QocXAAAOw== "/>
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd">2349A</td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+                VOGHERA
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row">00:25</td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" headers="HDettagli" scope="row" class="Dettagli_classtd marquee">
+            <button id="btn_202610142349A" tabindex="5"
+                    class="ApriFermateSuccessive focus yellowRow"
+                    onclick="apriFermateSuccessive(&#39;202610142349A&#39;)">
+                <img class="infologo" alt="Maggiori informazioni treno 2349A"
+                     src="/ArriviPartenze/Resources/Images/INFO NERO.png"/>
+            </button>
+            <div class="FermateSuccessivePopupStyle" draggable="true"
+                 id="FermateSuccessive_202610142349A" title="Treno 2349A">
+                <div class="FermateSuccessiveHeader">
+                    <span class="FermateSuccessiveTitolo">Treno 2349A</span>
+                    <button class="FermateSuccessiveBottoneChiudi"
+                            onclick="chiudiInfo(&#39;202610142349A&#39;)">
+                        <img id="Chiudi" class="FermateSuccessiveImgChiudi" alt="{chiudi}"
+                             src="/ArriviPartenze/Resources/Images/x-chiudi.png"/>
+                    </button>
+                </div>
+                <div class="titoloInfoAggiuntive">Fermate successive</div>
+                <div class="testoinfoaggiuntive">
+                    FERMA A:MILANO LAMBRATE (0:39) - MILANO ROGOREDO (0:53) - LOCATE TRIULZI (1:10)
+                    - PIEVE EMANUELE (1:23) - VILLAMAGGIORE (1:29) - CERTOSA DI PAVIA (1:48) - PAVIA
+                    (2:03) - VOGHERA (2:49)
+                </div>
+
+            </div>
+
+        </td>
+    </tr>
+    <tr name="treno" class="row greyRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd"></td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row"></td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" aria-label=&quot;Nessuna&quot; headers="HDettagli" scope="row"
+            class="Dettagli_classtd marquee">
+
+        </td>
+    </tr>
+    <tr name="treno" class="row yellowRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd"></td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row"></td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" aria-label=&quot;Nessuna&quot; headers="HDettagli" scope="row"
+            class="Dettagli_classtd marquee">
+
+        </td>
+    </tr>
+    <tr name="treno" class="row greyRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd"></td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row"></td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" aria-label=&quot;Nessuna&quot; headers="HDettagli" scope="row"
+            class="Dettagli_classtd marquee">
+
+        </td>
+    </tr>
+    <tr name="treno" class="row yellowRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd"></td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row"></td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" aria-label=&quot;Nessuna&quot; headers="HDettagli" scope="row"
+            class="Dettagli_classtd marquee">
+
+        </td>
+    </tr>
+    <tr name="treno" class="row greyRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd"></td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row"></td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" aria-label=&quot;Nessuna&quot; headers="HDettagli" scope="row"
+            class="Dettagli_classtd marquee">
+
+        </td>
+    </tr>
+    <tr name="treno" class="row yellowRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd"></td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row"></td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" aria-label=&quot;Nessuna&quot; headers="HDettagli" scope="row"
+            class="Dettagli_classtd marquee">
+
+        </td>
+    </tr>
+    <tr name="treno" class="row greyRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd"></td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row"></td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" aria-label=&quot;Nessuna&quot; headers="HDettagli" scope="row"
+            class="Dettagli_classtd marquee">
+
+        </td>
+    </tr>
+    <tr name="treno" class="row yellowRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd"></td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row"></td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" aria-label=&quot;Nessuna&quot; headers="HDettagli" scope="row"
+            class="Dettagli_classtd marquee">
+
+        </td>
+    </tr>
+    <tr name="treno" class="row greyRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd"></td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row"></td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" aria-label=&quot;Nessuna&quot; headers="HDettagli" scope="row"
+            class="Dettagli_classtd marquee">
+
+        </td>
+    </tr>
+    <tr name="treno" class="row yellowRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd"></td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row"></td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" aria-label=&quot;Nessuna&quot; headers="HDettagli" scope="row"
+            class="Dettagli_classtd marquee">
+
+        </td>
+    </tr>
+    <tr name="treno" class="row greyRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd"></td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row"></td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" aria-label=&quot;Nessuna&quot; headers="HDettagli" scope="row"
+            class="Dettagli_classtd marquee">
+
+        </td>
+    </tr>
+    <tr name="treno" class="row yellowRow">
+        <td id="RVettore" headers="HVettore" scope="row" class="Vettore_classtd">
+
+        </td>
+        <td id="RCategoria" headers="HCategoria" scope="row" class="Categoria_classtd">
+
+
+        </td>
+        <td id="RTreno" headers="HTreno" scope="row" class="Categoria_classtd"></td>
+
+        <td id="RStazione" class="Stazione_classtd marquee" headers="HStazione" scope="row"
+            name="Destinazione">
+            <div>
+
+            </div>
+        </td>
+        <td id="ROrario" class="Orario_classtd" headers="HOrario" scope="row"></td>
+
+        <td id="RRitardo" class="Ritardo_classtd" aria-label=&quot;Nessuno&quot; headers="HRitardo"
+            scope="row">
+
+
+        </td>
+
+
+        <td id="RBinario" class="marquee Binario_classtd" aria-label=&quot;NonDisponibile&quot;
+            headers="HBinario" scope="row">
+            <div>
+
+
+            </div>
+        </td>
+        <td id="RExLampeggio" class="ExLampeggio_classtd" aria-label=&quot;No&quot;
+            headers="HInArrivo" scope="row">
+        </td>
+
+        <td id="RDettagli" aria-label=&quot;Nessuna&quot; headers="HDettagli" scope="row"
+            class="Dettagli_classtd marquee">
+
+        </td>
+    </tr>
+
+    </tbody>
+</table>
+
+
+</body>
+</html>
