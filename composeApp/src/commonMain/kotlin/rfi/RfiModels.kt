@@ -1,6 +1,9 @@
 package rfi
 
+import kotlinx.serialization.Serializable
+
 /** Una località dell'elenco RFI (`<select id="ElencoLocalita">`). */
+@Serializable
 data class Station(val id: Int, val name: String)
 
 /** Quale tabella del monitor leggere: corrisponde al parametro `arrivals` dell'URL. */

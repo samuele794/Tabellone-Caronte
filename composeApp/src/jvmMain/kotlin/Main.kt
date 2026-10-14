@@ -20,6 +20,7 @@ import androidx.compose.ui.window.rememberWindowState
 import announce.Announcement
 import announce.AnnouncementText
 import announce.Announcer
+import cache.StationCache
 import departureboard.BoardLabels
 import departureboard.BoardLayout
 import departureboard.DepartureBoard
@@ -59,13 +60,21 @@ fun main(args: Array<String>) {
         return
     }
     val client = RfiClient()
+    val stationCache = StationCache(
+        File(
+            System.getProperty("user.home"),
+            ".departure-board/stations.json"
+        ).absolutePath
+    )
     val announcer = Announcer(DesktopSpeechEngine(), JvmSoundPlayer())
     System.setProperty("skiko.fps.enabled", "true")
     application {
-        val state = remember { LiveBoardState(client, announcer = announcer) }
+        val state =
+            remember { LiveBoardState(client, announcer = announcer, stationCache = stationCache) }
         Window(
             onCloseRequest = {
                 announcer.close()
+                stationCache.close()
                 client.close()
                 exitApplication()
             },

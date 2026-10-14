@@ -51,6 +51,8 @@ import androidx.compose.ui.window.DialogProperties
 import announce.Announcer
 import announce.BoardAnnouncements
 import announce.PlaceNames
+import cache.StationCache
+import cache.StationSource
 import debuglog.DebugLog
 import departureboard.BoardColors
 import departureboard.BoardFooter
@@ -88,13 +90,15 @@ val MilanoCentrale = Station(1728, "MILANO CENTRALE")
 
 /**
  * Stato del tabellone collegato al monitor RFI. Con un [announcer] le variazioni tra un
- * aggiornamento e il successivo vengono annunciate a voce.
+ * aggiornamento e il successivo vengono annunciate a voce; con una [stationCache] l'elenco
+ * stazioni si scarica al più una volta al mese.
  */
 @Stable
 class LiveBoardState(
     private val client: RfiClient,
     initial: Station = MilanoCentrale,
     private val announcer: Announcer? = null,
+    private val stationCache: StationCache? = null,
 ) {
     private val mapper = RfiMapper()
     private val announcements = BoardAnnouncements()
@@ -159,7 +163,8 @@ class LiveBoardState(
     suspend fun loadStations() {
         stationsError = null
         try {
-            stations = client.stations()
+            stations =
+                stationCache?.stations(StationSource.Rfi, client::stations) ?: client.stations()
             announcer?.places = PlaceNames(stations.map { it.name })
         } catch (e: CancellationException) {
             throw e
