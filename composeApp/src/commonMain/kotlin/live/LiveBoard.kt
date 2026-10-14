@@ -73,9 +73,11 @@ import rfi.BoardMode
 import rfi.RfiClient
 import rfi.RfiMapper
 import rfi.Station
+import kotlin.math.ceil
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.DurationUnit
 import kotlin.time.TimeSource
 
 /** Ogni quanto riscaricare il monitor RFI. */
@@ -130,8 +132,18 @@ class LiveBoardState(
     /** Stazione e modalità a cui si riferiscono [departures]. */
     private var loadedKey: Pair<Int, BoardMode>? = null
 
-    /** Ultimo tentativo di aggiornamento, riuscito o no. */
+    /** Fine dell'ultimo tentativo di aggiornamento, riuscito o no. */
     private var lastRefresh: TimeSource.Monotonic.ValueTimeMark? = null
+
+    /** Quando partirà il prossimo aggiornamento; null finché non è in programma. */
+    var nextRefreshAt by mutableStateOf<TimeSource.Monotonic.ValueTimeMark?>(null)
+        private set
+
+    /** Attende [after] prima del prossimo aggiornamento, rendendolo visibile in [nextRefreshAt]. */
+    suspend fun waitForRefresh(after: Duration) {
+        nextRefreshAt = TimeSource.Monotonic.markNow() + after
+        delay(after)
+    }
 
     /**
      * Attesa prima del prossimo aggiornamento: zero se i dati sono di un'altra tabella, altrimenti
@@ -165,7 +177,6 @@ class LiveBoardState(
             announcer?.clear()
         }
         loading = true
-        lastRefresh = TimeSource.Monotonic.markNow()
         try {
             val board = client.board(key.first, key.second)
             departures = mapper.departures(board)
@@ -186,6 +197,7 @@ class LiveBoardState(
             error = "Aggiornamento non riuscito: ${e.message ?: e::class.simpleName}"
         } finally {
             loading = false
+            lastRefresh = TimeSource.Monotonic.markNow()
         }
     }
 }
@@ -195,10 +207,10 @@ class LiveBoardState(
 fun LiveBoard(state: LiveBoardState, now: LocalDateTime) {
     LaunchedEffect(Unit) { if (state.stations.isEmpty()) state.loadStations() }
     LaunchedEffect(state.station.id, state.mode) {
-        delay(state.nextRefreshIn(REFRESH_MILLIS))
+        state.waitForRefresh(state.nextRefreshIn(REFRESH_MILLIS))
         while (isActive) {
             state.refresh()
-            delay(REFRESH_MILLIS)
+            state.waitForRefresh(REFRESH_MILLIS)
         }
     }
     var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -216,7 +228,7 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime) {
                 logoDensity = RfiMapper.LOGO_DENSITY,
             ),
             colors = colors,
-            status = statusLabel(state),
+            status = statusLabel(state, secondsToRefresh(state.nextRefreshAt)),
             onSettingsClick = { showSettings = true },
             modifier = Modifier.fillMaxSize(),
         )
@@ -225,16 +237,42 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime) {
     if (showSettings) SettingsDialog(state, onDismiss = { showSettings = false })
 }
 
-/** Scritta accanto alla rotella: ora dell'ultimo aggiornamento, o perché manca. */
-private fun statusLabel(state: LiveBoardState): String? {
+/**
+ * Scritta accanto alla rotella: ora dell'ultimo aggiornamento, o perché manca, e quanto manca
+ * al prossimo ([secondsLeft]).
+ */
+private fun statusLabel(state: LiveBoardState, secondsLeft: Long?): String? {
     val updated = state.updatedAt?.format(TimeWithSeconds)
-    return when {
+    val last = when {
         state.error != null && updated != null -> "Aggiornamento non riuscito · dati delle $updated"
         state.error != null -> "Aggiornamento non riuscito"
         updated != null -> "Aggiornato alle $updated"
-        state.loading -> "Aggiornamento…"
-        else -> null
+        state.loading -> return "Aggiornamento…"
+        else -> return null
     }
+    val next = when {
+        state.loading -> "aggiornamento…"
+        secondsLeft == null -> return last
+        state.error != null -> "nuovo tentativo tra $secondsLeft s"
+        else -> "prossimo tra $secondsLeft s"
+    }
+    return "$last · $next"
+}
+
+/** Secondi interi (per eccesso) che mancano a [target], aggiornati allo scatto di ogni secondo. */
+@Composable
+private fun secondsToRefresh(target: TimeSource.Monotonic.ValueTimeMark?): Long? {
+    val seconds by produceState<Long?>(null, target) {
+        if (target == null) return@produceState
+        while (true) {
+            val left = -target.elapsedNow()
+            val s = ceil(left.toDouble(DurationUnit.SECONDS)).toLong().coerceAtLeast(0)
+            value = s
+            if (s == 0L) break
+            delay(left - (s - 1).seconds)
+        }
+    }
+    return seconds
 }
 
 @Composable
