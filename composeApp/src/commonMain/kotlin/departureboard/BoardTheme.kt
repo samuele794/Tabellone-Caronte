@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.PointMode
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -27,6 +28,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.min
 
 /** Palette del tabellone. */
 @Immutable
@@ -101,10 +104,10 @@ internal fun DrawScope.drawLeds(
     }
 }
 
-/** Griglia di LED spenti di [cols]×[rows] punti. */
-internal fun ledGrid(cols: Int, rows: Int, pitchPx: Float): List<Offset> =
+/** Griglia di LED spenti di [cols]×[rows] punti, a partire dalla colonna [firstCol]. */
+internal fun ledGrid(cols: Int, rows: Int, pitchPx: Float, firstCol: Int = 0): List<Offset> =
     ArrayList<Offset>(cols * rows).apply {
-        for (r in 0 until rows) for (c in 0 until cols) {
+        for (r in 0 until rows) for (c in firstCol until firstCol + cols) {
             add(Offset((c + 0.5f) * pitchPx, (r + 0.5f) * pitchPx))
         }
     }
@@ -129,21 +132,75 @@ internal fun ledBitmap(
 }
 
 /**
+ * Larghezza massima di una bitmap LED. La GPU non accetta texture più larghe del suo limite
+ * (4096–16384 px secondo il device): oltre, Android scrive "Bitmap too large to be uploaded into
+ * a texture" e non disegna nulla. Gli avvisi a scorrimento superano facilmente quel limite.
+ */
+private const val MAX_TILE_PX = 2048
+
+/** Pezzo di una striscia LED, da disegnare [x] pixel a destra dell'inizio della striscia. */
+internal class LedTile(val x: Int, val bitmap: ImageBitmap)
+
+/**
+ * Come [ledBitmap], ma divisa in pezzi larghi al più [MAX_TILE_PX]. I tagli cadono su pixel
+ * interi, quindi i pezzi accostati danno esattamente la stessa immagine di una bitmap sola.
+ */
+internal fun ledTiles(
+    cols: Int,
+    rows: Int,
+    pitchPx: Float,
+    offColor: Color,
+    lit: List<Offset>,
+    color: Color,
+): List<LedTile> {
+    val width = ceil(cols * pitchPx).toInt().coerceAtLeast(1)
+    val height = ceil(rows * pitchPx).toInt().coerceAtLeast(1)
+    return (0 until width step MAX_TILE_PX).map { x0 ->
+        val x1 = min(x0 + MAX_TILE_PX, width)
+        // Solo i punti che toccano il pezzo, con una colonna di margine per l'alone.
+        val c0 = (floor(x0 / pitchPx).toInt() - 1).coerceAtLeast(0)
+        val c1 = (ceil(x1 / pitchPx).toInt() + 1).coerceAtMost(cols)
+        val near = lit.filter { it.x > x0 - 2 * pitchPx && it.x < x1 + 2 * pitchPx }
+        LedTile(x0, rasterize(x1 - x0, height) {
+            translate(left = -x0.toFloat()) {
+                drawLeds(
+                    ledGrid(c1 - c0, rows, pitchPx, firstCol = c0),
+                    pitchPx,
+                    offColor,
+                    glow = false
+                )
+                drawLeds(near, pitchPx, color)
+            }
+        })
+    }
+}
+
+/**
  * Bitmap LED prodotta da [render] su [Dispatchers.Default]. Un tabellone pieno ha centinaia di
  * matrici: disegnate nel draw bloccherebbero il thread principale per oltre un secondo a ogni
  * nuova composizione (avvio, rotazione) o cambio di passo. Vale null finché la prima non è pronta;
  * quando cambiano le [keys] resta quella precedente fino all'arrivo della nuova.
  */
 @Composable
-internal fun rememberLedBitmap(vararg keys: Any?, render: () -> ImageBitmap): State<ImageBitmap?> {
-    val bitmap = remember { mutableStateOf<ImageBitmap?>(null) }
+internal fun rememberLedBitmap(vararg keys: Any?, render: () -> ImageBitmap): State<ImageBitmap?> =
+    rememberRendered(*keys) { render().also { it.prepareToDraw() } }
+
+/** Come [rememberLedBitmap], per una striscia divisa in pezzi da [ledTiles]. */
+@Composable
+internal fun rememberLedTiles(
+    vararg keys: Any?,
+    render: () -> List<LedTile>
+): State<List<LedTile>?> =
+    rememberRendered(*keys) { render().onEach { it.bitmap.prepareToDraw() } }
+
+@Composable
+private fun <T : Any> rememberRendered(vararg keys: Any?, render: () -> T): State<T?> {
+    val value = remember { mutableStateOf<T?>(null) }
     LaunchedEffect(*keys) {
-        bitmap.value = withContext(Dispatchers.Default) {
-            // Su Android avvia subito il caricamento della texture, fuori dal primo frame.
-            render().also { it.prepareToDraw() }
-        }
+        // Su Android prepareToDraw avvia subito il caricamento della texture, fuori dal primo frame.
+        value.value = withContext(Dispatchers.Default) { render() }
     }
-    return bitmap
+    return value
 }
 
 /** Disegna su una ImageBitmap; funziona in common code (Android, desktop, iOS, web). */

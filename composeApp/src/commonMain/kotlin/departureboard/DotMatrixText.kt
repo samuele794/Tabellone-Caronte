@@ -9,6 +9,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import kotlin.math.max
@@ -65,11 +66,11 @@ fun DotMatrixText(
     // Chi scorre usa una striscia lunga un periodo (testo + spazio), LED spenti compresi:
     // si sposta a colonne intere, quindi la griglia resta identica.
     val stripCols = if (scrolling) period else boxCols
-    val leds = rememberLedBitmap(run, startCols, stripCols, p, offColor, color) {
+    val leds = rememberLedTiles(run, startCols, stripCols, p, offColor, color) {
         val lit = List(run.size) { i ->
             Offset((startCols + run.xs[i] + 0.5f) * p, (run.ys[i] + 0.5f) * p)
         }
-        ledBitmap(stripCols, DotMatrixFont.ROWS, p, offColor, lit, color)
+        ledTiles(stripCols, DotMatrixFont.ROWS, p, offColor, lit, color)
     }
     val periodPx = (period * p).roundToInt()
 
@@ -78,16 +79,27 @@ fun DotMatrixText(
             .size(pitch * boxCols, pitch * DotMatrixFont.ROWS)
             .clipToBounds()
             .drawBehind {
-                val bitmap = leds.value ?: return@drawBehind
+                val tiles = leds.value ?: return@drawBehind
                 if (ticker != null) {
                     // Scorre a scatti interi di una colonna, come i moduli LED reali.
                     val col = (ticker.value * scrollSpeed / 1000).toLong() % period
                     val dx = (col * p).roundToInt().toFloat()
-                    drawImage(bitmap, Offset(-dx, 0f))
-                    drawImage(bitmap, Offset(periodPx - dx, 0f))
+                    drawTiles(tiles, -dx)
+                    drawTiles(tiles, periodPx - dx)
                 } else {
-                    drawImage(bitmap)
+                    drawTiles(tiles, 0f)
                 }
             },
     )
+}
+
+/** Disegna i pezzi di una striscia che parte da [x], saltando quelli fuori dal riquadro. */
+private fun DrawScope.drawTiles(tiles: List<LedTile>, x: Float) {
+    for (tile in tiles) {
+        val left = x + tile.x
+        if (left < size.width && left + tile.bitmap.width > 0) drawImage(
+            tile.bitmap,
+            Offset(left, 0f)
+        )
+    }
 }
