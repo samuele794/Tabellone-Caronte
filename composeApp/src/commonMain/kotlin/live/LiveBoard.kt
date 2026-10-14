@@ -54,6 +54,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import announce.Announcer
 import announce.BoardAnnouncements
 import announce.PlaceNames
@@ -79,6 +82,7 @@ import kotlinx.datetime.format.MonthNames
 import kotlinx.datetime.format.char
 import kotlinx.datetime.toLocalDateTime
 import live.LiveBoardState.Companion.DEFAULT_REFRESH
+import live.LiveBoardState.Companion.STALE_PAUSE
 import rfi.BoardMode
 import rfi.RfiMapper
 import rfi.Station
@@ -128,6 +132,9 @@ class LiveBoardState(
     var mode by mutableStateOf(BoardMode.Departures)
     private var autoScrollState by mutableStateOf(true)
     private var announceState by mutableStateOf(true)
+    private var ecoModeState by mutableStateOf(false)
+    private var screenOnOnlyWhenChargingState by mutableStateOf(false)
+    private var oledPaletteState by mutableStateOf(false)
 
     /**
      * Se le impostazioni salvate sono già state ripristinate (o non c'è niente da ripristinare):
@@ -139,7 +146,9 @@ class LiveBoardState(
     /** Impostazioni cambiate prima del ripristino: vincono su quelle salvate. */
     private val changedBeforeRestore = mutableSetOf<Setting>()
 
-    private enum class Setting { Selection, AutoScroll, Announce, Refresh, ListRefresh }
+    private enum class Setting {
+        Selection, AutoScroll, Announce, Refresh, ListRefresh, EcoMode, ScreenOnOnlyWhenCharging, OledPalette,
+    }
 
     /** Intervalli di aggiornamento scelti, per fornitore; chi manca usa [DEFAULT_REFRESH]. */
     private var refreshIntervals by mutableStateOf<Map<StationSource, Duration>>(emptyMap())
@@ -234,6 +243,30 @@ class LiveBoardState(
             changed(Setting.Announce)
         }
 
+    /** Modalità risparmio: marquee e scorrimento a 5 scatti al secondo, ":" dell'orologio fissi. */
+    var ecoMode: Boolean
+        get() = ecoModeState
+        set(value) {
+            ecoModeState = value
+            changed(Setting.EcoMode)
+        }
+
+    /** Schermo sempre acceso solo in carica, sulle piattaforme che sanno se lo sono. */
+    var screenOnOnlyWhenCharging: Boolean
+        get() = screenOnOnlyWhenChargingState
+        set(value) {
+            screenOnOnlyWhenChargingState = value
+            changed(Setting.ScreenOnOnlyWhenCharging)
+        }
+
+    /** Fondo e moduli neri ([BoardColors.Oled]). */
+    var oledPalette: Boolean
+        get() = oledPaletteState
+        set(value) {
+            oledPaletteState = value
+            changed(Setting.OledPalette)
+        }
+
     /** Riporta le impostazioni a quelle salvate; dalla seconda volta non fa nulla. */
     suspend fun restoreSettings() {
         if (restored) return
@@ -245,6 +278,11 @@ class LiveBoardState(
         }
         if (Setting.AutoScroll !in changedBeforeRestore) autoScrollState = saved.autoScroll
         if (Setting.Announce !in changedBeforeRestore) announceState = saved.announce
+        if (Setting.EcoMode !in changedBeforeRestore) ecoModeState = saved.ecoMode
+        if (Setting.ScreenOnOnlyWhenCharging !in changedBeforeRestore) {
+            screenOnOnlyWhenChargingState = saved.screenOnOnlyWhenCharging
+        }
+        if (Setting.OledPalette !in changedBeforeRestore) oledPaletteState = saved.oledPalette
         // Per gli intervalli vince, fornitore per fornitore, quello scelto prima del ripristino.
         val refresh = saved.refreshSeconds.toIntervals(REFRESH_OPTIONS).filterKeys { it in sources }
         refreshIntervals =
@@ -272,6 +310,9 @@ class LiveBoardState(
                 announce,
                 refreshSeconds = refreshIntervals.inSeconds(),
                 listRefreshSeconds = listRefreshIntervals.inSeconds(),
+                ecoMode = ecoMode,
+                screenOnOnlyWhenCharging = screenOnOnlyWhenCharging,
+                oledPalette = oledPalette,
             )
         )
     }
@@ -320,6 +361,19 @@ class LiveBoardState(
         return (interval - last.elapsedNow()).coerceAtLeast(Duration.ZERO)
     }
 
+    /** Da quando il tabellone non è visibile; null se lo è. */
+    private var pausedAt: TimeSource.Monotonic.ValueTimeMark? = null
+
+    /**
+     * Il tabellone non è più visibile: si zittisce l'annuncio in corso. Se la pausa dura più di
+     * [STALE_PAUSE], il primo tabellone al ritorno fa solo da base, così le variazioni accumulate
+     * nel frattempo non si annunciano in blocco (una rotazione invece non perde nulla).
+     */
+    fun pause() {
+        announcer?.clear()
+        pausedAt = TimeSource.Monotonic.markNow()
+    }
+
     suspend fun loadStations(source: StationSource = this.source) {
         stationErrors -= source
         val client = sources.getValue(source)
@@ -351,6 +405,8 @@ class LiveBoardState(
             val board = client.board(station, key.third)
             departures = mapper.departures(board)
             notices = board.notices
+            if (pausedAt?.let { it.elapsedNow() > STALE_PAUSE } == true) announcements.reset()
+            pausedAt = null
             // Il primo tabellone di una stazione fa solo da base: update() non annuncia nulla.
             val news = announcements.update(key.second, key.third, board)
             when {
@@ -375,6 +431,9 @@ class LiveBoardState(
     }
 
     companion object {
+        /** Pausa oltre la quale gli annunci ripartono da una nuova base. */
+        val STALE_PAUSE = 1.minutes
+
         /** Intervallo di aggiornamento se non se ne è scelto un altro. */
         val DEFAULT_REFRESH = 30.seconds
 
@@ -396,27 +455,54 @@ private fun Map<StationSource, Int>.toIntervals(options: List<Duration>): Map<St
 private fun Map<StationSource, Duration>.inSeconds(): Map<StationSource, Int> =
     mapValues { it.value.inWholeSeconds.toInt() }
 
-/** Tabellone live a tutto schermo; stazione, modalità e scorrimento si cambiano dalla rotella. */
+/**
+ * Tabellone live a tutto schermo; stazione, modalità e scorrimento si cambiano dalla rotella.
+ *
+ * Gli aggiornamenti si fermano mentre l'app non è visibile (sotto [Lifecycle.State.STARTED]) e
+ * ripartono al ritorno. [charging] dice se il dispositivo è in carica; null se la piattaforma
+ * non lo sa, e allora lo schermo resta sempre acceso.
+ */
 @Composable
-fun LiveBoard(state: LiveBoardState, now: LocalDateTime) {
+fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = null) {
     LaunchedEffect(Unit) { state.restoreSettings() }
     LaunchedEffect(state.source, state.restored) {
         if (state.restored && state.stations(state.source).isEmpty()) state.loadStations()
     }
     val interval = state.refreshInterval()
-    LaunchedEffect(state.source, state.station.id, state.mode, state.restored, interval) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(
+        state.source,
+        state.station.id,
+        state.mode,
+        state.restored,
+        interval,
+        lifecycle
+    ) {
         if (!state.restored) return@LaunchedEffect
-        // Cambiando intervallo si attende solo il resto, dall'ultimo aggiornamento.
-        state.waitForRefresh(state.nextRefreshIn(interval))
-        while (isActive) {
-            state.refresh()
-            state.waitForRefresh(interval)
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            try {
+                // Cambiando intervallo, o tornando in primo piano, si attende solo il resto
+                // dall'ultimo aggiornamento (niente, se è già passato).
+                state.waitForRefresh(state.nextRefreshIn(interval))
+                while (isActive) {
+                    state.refresh()
+                    state.waitForRefresh(interval)
+                }
+            } finally {
+                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) state.pause()
+            }
         }
     }
     var showSettings by rememberSaveable { mutableStateOf(false) }
 
-    val colors = remember { BoardColors() }
-    Box(Modifier.fillMaxSize().background(colors.frame).safeDrawingPadding().keepScreenOn()) {
+    val colors = remember(state.oledPalette) {
+        if (state.oledPalette) BoardColors.Oled else BoardColors()
+    }
+    val screenOn = !state.screenOnOnlyWhenCharging || charging != false
+    Box(
+        Modifier.fillMaxSize().background(colors.frame).safeDrawingPadding()
+            .then(if (screenOn) Modifier.keepScreenOn() else Modifier)
+    ) {
         DepartureBoard(
             departures = state.departures,
             footer = boardFooter(now, state.notices, state.station.name),
@@ -426,6 +512,9 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime) {
                 autoScroll = state.autoScroll,
                 logoCols = RfiMapper.LOGO_COLS,
                 logoDensity = RfiMapper.LOGO_DENSITY,
+                ledStepMillis = if (state.ecoMode) ECO_LED_STEP_MILLIS else 100,
+                marqueeColsPerSecond = if (state.ecoMode) ECO_MARQUEE_COLS_PER_SECOND else 10f,
+                blinkingColon = !state.ecoMode,
             ),
             colors = colors,
             status = statusLabel(
@@ -438,8 +527,17 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime) {
         )
     }
 
-    if (showSettings) SettingsDialog(state, onDismiss = { showSettings = false })
+    if (showSettings) {
+        SettingsDialog(
+            state,
+            knowsCharging = charging != null,
+            onDismiss = { showSettings = false })
+    }
 }
+
+/** Modalità risparmio: 5 scatti al secondo invece di 10, una colonna di marquee per scatto. */
+private const val ECO_LED_STEP_MILLIS = 200L
+private const val ECO_MARQUEE_COLS_PER_SECOND = 5f
 
 /**
  * Scritta accanto alla rotella: ora dell'ultimo aggiornamento, o perché manca, e quanto manca
@@ -493,7 +591,7 @@ private fun secondsToRefresh(target: TimeSource.Monotonic.ValueTimeMark?): Long?
 }
 
 @Composable
-private fun SettingsDialog(state: LiveBoardState, onDismiss: () -> Unit) {
+private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDismiss: () -> Unit) {
     var pickStation by rememberSaveable { mutableStateOf(false) }
 
     AlertDialog(
@@ -514,22 +612,16 @@ private fun SettingsDialog(state: LiveBoardState, onDismiss: () -> Unit) {
                         ) { Text(if (mode == BoardMode.Departures) "Partenze" else "Arrivi") }
                     }
                 }
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Scorrimento automatico", style = MaterialTheme.typography.bodyLarge)
-                    Switch(checked = state.autoScroll, onCheckedChange = { state.autoScroll = it })
-                }
+                SwitchRow("Scorrimento automatico", state.autoScroll) { state.autoScroll = it }
                 if (state.canAnnounce) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("Annunci sonori", style = MaterialTheme.typography.bodyLarge)
-                        Switch(checked = state.announce, onCheckedChange = { state.announce = it })
+                    SwitchRow("Annunci sonori", state.announce) { state.announce = it }
+                }
+                Text("Risparmio energetico", style = MaterialTheme.typography.titleSmall)
+                SwitchRow("Modalità risparmio", state.ecoMode) { state.ecoMode = it }
+                SwitchRow("Fondo nero (schermi OLED)", state.oledPalette) { state.oledPalette = it }
+                if (knowsCharging) {
+                    SwitchRow("Schermo acceso solo in carica", state.screenOnOnlyWhenCharging) {
+                        state.screenOnOnlyWhenCharging = it
                     }
                 }
                 Text("Aggiornamento", style = MaterialTheme.typography.titleSmall)
@@ -575,6 +667,18 @@ private fun SettingsDialog(state: LiveBoardState, onDismiss: () -> Unit) {
             },
             onDismiss = { pickStation = false },
         )
+    }
+}
+
+@Composable
+private fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -787,14 +891,20 @@ private fun StationItem(station: Station, selected: Boolean, onClick: () -> Unit
     )
 }
 
-/** Ora locale aggiornata a ogni cambio di minuto (il tabellone mostra solo HH:MM). */
+/**
+ * Ora locale aggiornata a ogni cambio di minuto (il tabellone mostra solo HH:MM). Si ferma mentre
+ * l'app non è visibile e al ritorno si rimette subito all'ora giusta.
+ */
 @Composable
 fun rememberNow(): LocalDateTime {
-    val now by produceState(localNow().truncatedToMinute()) {
-        while (true) {
-            val t = localNow()
-            value = t.truncatedToMinute()
-            delay(60_000L - (t.second * 1_000L + t.nanosecond / 1_000_000))
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val now by produceState(localNow().truncatedToMinute(), lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val t = localNow()
+                value = t.truncatedToMinute()
+                delay(60_000L - (t.second * 1_000L + t.nanosecond / 1_000_000))
+            }
         }
     }
     return now

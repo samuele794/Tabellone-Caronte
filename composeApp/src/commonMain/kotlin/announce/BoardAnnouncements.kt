@@ -69,6 +69,14 @@ class BoardAnnouncements {
         return announcements
     }
 
+    /**
+     * Dimentica la base: il prossimo [update] fa di nuovo solo da base. Serve quando il tabellone
+     * è rimasto fermo (app in background) e le variazioni accumulate non vanno annunciate in blocco.
+     */
+    fun reset() {
+        key = null
+    }
+
     /** Un treno entra nella base: quello che mostra già non va annunciato. */
     private fun remember(t: RfiTrain) {
         t.delayMinutes?.takeIf { it >= DELAY_THRESHOLD }?.let { announcedDelay[t.number] = it }

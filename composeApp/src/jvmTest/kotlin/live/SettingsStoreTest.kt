@@ -136,6 +136,34 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun `le impostazioni di risparmio energetico sopravvivono alla riapertura`() = runBlocking {
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            state.restoreSettings()
+            state.ecoMode = true
+            state.screenOnOnlyWhenCharging = true
+            state.oledPalette = true
+            store.awaitSaved(
+                BoardSettings(
+                    Selection(StationSource.Rfi, milano),
+                    ecoMode = true,
+                    screenOnOnlyWhenCharging = true,
+                    oledPalette = true,
+                )
+            )
+        }
+
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            assertFalse(state.ecoMode)
+            state.restoreSettings()
+            assertTrue(state.ecoMode)
+            assertTrue(state.screenOnOnlyWhenCharging)
+            assertTrue(state.oledPalette)
+        }
+    }
+
+    @Test
     fun `un cambio fatto prima del ripristino vince solo per quell'impostazione`() = runBlocking {
         saveOnDisk(saronnoQuiet)
 

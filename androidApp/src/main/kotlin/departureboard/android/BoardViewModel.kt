@@ -1,9 +1,11 @@
 package departureboard.android
 
 import android.app.Application
+import android.content.pm.ApplicationInfo
 import androidx.lifecycle.AndroidViewModel
 import announce.Announcer
 import cache.StationCache
+import debuglog.DebugLog
 import fnm.FnmBoardSource
 import fnm.FnmClient
 import fnm.FnmKeyStore
@@ -20,6 +22,11 @@ import java.io.File
  * (stazione, modalità, impostazioni e ultimi dati restano; il TTS non viene ricreato).
  */
 class BoardViewModel(app: Application) : AndroidViewModel(app) {
+    init {
+        // Il log di debug serve solo nelle build di sviluppo.
+        DebugLog.enabled = app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+    }
+
     private val stationCache =
         StationCache(File(app.filesDir, "datastore/stations.json").absolutePath)
     private val settingsStore =

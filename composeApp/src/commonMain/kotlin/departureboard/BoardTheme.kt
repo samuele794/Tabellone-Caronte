@@ -24,6 +24,9 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -50,26 +53,47 @@ data class BoardColors(
     val lampOff: Color = Color(0xFF3A3C42),
     /** Spie accese. */
     val lampOn: Color = Color(0xFFFFE7B8),
-)
+) {
+    companion object {
+        /**
+         * Fondo, cornice e moduli neri: sugli schermi OLED i pixel neri sono spenti e non
+         * consumano. Anche i LED spenti sono più tenui, perché coprono quasi tutto il pannello.
+         */
+        val Oled = BoardColors(
+            board = Color.Black,
+            frame = Color.Black,
+            module = Color.Black,
+            ledOff = Color(0x0CFFA51F),
+            lampOff = Color(0xFF1E1F23),
+        )
+    }
+}
 
 /** Passo (distanza tra i centri) dei punti LED. Tutte le misure del tabellone ne derivano. */
 val LocalDotPitch = compositionLocalOf<Dp> { 2.5.dp }
 val LocalBoardColors = staticCompositionLocalOf { BoardColors() }
 
 /**
- * Millisecondi trascorsi, a scatti: fa avanzare marquee e spie tutti nello stesso frame e senza
- * chiedere un frame a ogni vsync. [DepartureBoard] ne fornisce uno se non c'è già.
+ * Millisecondi trascorsi, a scatti: fa avanzare marquee, spie e scorrimento delle righe tutti
+ * nello stesso frame e senza chiedere un frame a ogni vsync. [DepartureBoard] ne fornisce uno se
+ * non c'è già.
  */
 val LocalLedTicker = staticCompositionLocalOf<State<Long>?> { null }
 
-/** Orologio a scatti di [stepMillis] per [LocalLedTicker]. */
+/**
+ * Orologio a scatti di [stepMillis] per [LocalLedTicker]. Si ferma mentre l'app non è visibile
+ * (sotto [Lifecycle.State.STARTED]), così in background non sveglia la CPU 10 volte al secondo.
+ */
 @Composable
 fun rememberLedTicker(stepMillis: Long = 100): State<Long> {
     val millis = remember { mutableLongStateOf(0L) }
-    LaunchedEffect(stepMillis) {
-        while (true) {
-            delay(stepMillis)
-            millis.longValue += stepMillis
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(stepMillis, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                delay(stepMillis)
+                millis.longValue += stepMillis
+            }
         }
     }
     return millis

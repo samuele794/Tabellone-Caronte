@@ -25,6 +25,7 @@ kotlin {
             api(libs.compose.ui)
             api(libs.compose.material3)
             implementation(libs.compose.components.resources)
+            implementation(libs.lifecycle.runtime.compose)
             implementation(libs.ktor.client.core)
             implementation(libs.ksoup)
             api(libs.kotlinx.datetime)

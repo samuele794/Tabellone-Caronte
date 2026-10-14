@@ -45,6 +45,12 @@ data class BoardSettings(
     val refreshSeconds: Map<StationSource, Int> = emptyMap(),
     /** Secondi tra un riscaricamento dell'elenco treni e l'altro, per i fornitori che lo fanno a parte. */
     val listRefreshSeconds: Map<StationSource, Int> = emptyMap(),
+    /** Modalità risparmio: animazioni più lente, orologio fisso e (su Android) luminosità ridotta. */
+    val ecoMode: Boolean = false,
+    /** Schermo sempre acceso solo con il dispositivo in carica. */
+    val screenOnOnlyWhenCharging: Boolean = false,
+    /** Fondo e moduli neri, per gli schermi OLED. */
+    val oledPalette: Boolean = false,
 )
 
 /**

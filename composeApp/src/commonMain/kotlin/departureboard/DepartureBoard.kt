@@ -24,8 +24,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -153,6 +152,15 @@ data class BoardLayout(
     val scrollPauseMillis: Long = 3_000,
     /** Attesa dall'ultimo scroll manuale prima che riprenda quello automatico. */
     val scrollResumeMillis: Long = 2_000,
+    /**
+     * Passo del [LocalLedTicker]: ogni quanto avanzano marquee, spie e scorrimento delle righe.
+     * Più lungo = meno frame al secondo, quindi meno consumo.
+     */
+    val ledStepMillis: Long = 100,
+    /** Velocità del marquee, in colonne di punti al secondo: una colonna per scatto è la più fluida. */
+    val marqueeColsPerSecond: Float = 10f,
+    /** I ":" dell'orologio lampeggiano; false = sempre accesi. */
+    val blinkingColon: Boolean = true,
 )
 
 /** Fascia inferiore: orologio, data e due righe di avvisi a scorrimento. */
@@ -253,7 +261,7 @@ fun DepartureBoard(
             val footerH = if (footer != null) U.FOOTER_GAP + g.footerH else 0f
             pitch = min(pitch, maxHeight / (U.CHROME_H + footerH + rowsHeight(U.MIN_FILL_ROWS)))
         }
-        val ticker = LocalLedTicker.current ?: rememberLedTicker()
+        val ticker = LocalLedTicker.current ?: rememberLedTicker(layout.ledStepMillis)
         CompositionLocalProvider(
             LocalDotPitch provides pitch,
             LocalBoardColors provides colors,
@@ -302,7 +310,7 @@ private fun BoardPanel(
         }
         if (footer != null) {
             Spacer(Modifier.height(p * U.FOOTER_GAP))
-            BoardFooterRow(footer, g, p)
+            BoardFooterRow(footer, layout, g, p)
         }
     }
 }
@@ -343,11 +351,15 @@ private fun DepartureRows(
     val hidden = (departures.size - visible).coerceAtLeast(0)
     val m = rowMetrics(p)
     val user = remember { UserScrollTracker() }
-    LaunchedEffect(hidden, m, layout) {
+    val ticker = LocalLedTicker.current ?: rememberLedTicker(layout.ledStepMillis)
+    val dotPx = with(LocalDensity.current) { p.toPx() }
+    LaunchedEffect(hidden, m, layout, ticker, dotPx) {
         if (hidden == 0 || !layout.autoScroll) return@LaunchedEffect
         scroll.autoScroll(
             bottom = hidden * m.stepPx,
             pxPerSecond = m.stepPx * layout.scrollRowsPerSecond,
+            dotPx = dotPx,
+            ticker = ticker,
             pauseMillis = layout.scrollPauseMillis,
             resumeMillis = layout.scrollResumeMillis,
             user = user,
@@ -530,7 +542,11 @@ private fun DepartureRow(d: Departure?, layout: BoardLayout, g: BoardGeometry, p
             }
         }
         Module(g.destination, p) {
-            DotMatrixText(d?.destination.orEmpty(), chars = layout.destinationChars)
+            DotMatrixText(
+                d?.destination.orEmpty(),
+                chars = layout.destinationChars,
+                scrollSpeed = layout.marqueeColsPerSecond,
+            )
         }
         Module(g.time, p) {
             DotMatrixText(d?.time.orEmpty(), chars = layout.timeChars, marquee = Marquee.Off)
@@ -545,7 +561,11 @@ private fun DepartureRow(d: Departure?, layout: BoardLayout, g: BoardGeometry, p
             )
         }
         Module(g.info, p) {
-            DotMatrixText(d?.info.orEmpty(), chars = layout.infoChars)
+            DotMatrixText(
+                d?.info.orEmpty(),
+                chars = layout.infoChars,
+                scrollSpeed = layout.marqueeColsPerSecond,
+            )
         }
         Module(g.platform, p) {
             DotMatrixText(
@@ -560,12 +580,7 @@ private fun DepartureRow(d: Departure?, layout: BoardLayout, g: BoardGeometry, p
 }
 
 @Composable
-private fun BoardFooterRow(footer: BoardFooter, g: BoardGeometry, p: Dp) {
-    // I ":" dell'orologio lampeggiano: mezzo secondo accesi, mezzo spenti.
-    val ticker = LocalLedTicker.current ?: rememberLedTicker()
-    val colonOn by remember(ticker) { derivedStateOf { ticker.value / 500 % 2 == 0L } }
-    val clock = if (colonOn) footer.clock else footer.clock.replace(':', ' ')
-
+private fun BoardFooterRow(footer: BoardFooter, layout: BoardLayout, g: BoardGeometry, p: Dp) {
     Row(horizontalArrangement = Arrangement.spacedBy(p * U.COL_GAP)) {
         Module(g.clockW, p, heightDots = g.footerH) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -581,16 +596,54 @@ private fun BoardFooterRow(footer: BoardFooter, g: BoardGeometry, p: Dp) {
                     }
                 }
                 Spacer(Modifier.width(p * U.LOGO_GAP))
-                DotMatrixText(clock, chars = 5, pitch = p * U.CLOCK_PITCH, marquee = Marquee.Off)
+                LedClock(footer.clock, blink = layout.blinkingColon, pitch = p * U.CLOCK_PITCH)
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(p * U.ROW_GAP)) {
             repeat(2) { i ->
                 Module(g.tickerW, p) {
-                    DotMatrixText(footer.messages.getOrNull(i).orEmpty(), chars = g.tickerChars)
+                    DotMatrixText(
+                        footer.messages.getOrNull(i).orEmpty(),
+                        chars = g.tickerChars,
+                        scrollSpeed = layout.marqueeColsPerSecond,
+                    )
                 }
             }
         }
+    }
+}
+
+/**
+ * Orologio LED con i ":" che lampeggiano ([blink]): mezzo secondo accesi, mezzo spenti. Le due
+ * versioni si disegnano una volta sola e si alternano con la trasparenza del livello: cambiare
+ * il testo a ogni lampeggio ricomporrebbe e ridisegnerebbe la matrice due volte al secondo.
+ */
+@Composable
+private fun LedClock(clock: String, blink: Boolean, pitch: Dp) {
+    if (!blink) {
+        DotMatrixText(clock, chars = 5, pitch = pitch, marquee = Marquee.Off)
+        return
+    }
+    val ticker = LocalLedTicker.current ?: rememberLedTicker()
+
+    // Una sola versione visibile alla volta: sovrapposte, i LED spenti risulterebbero più chiari.
+    fun Modifier.visibleWhen(colonOn: Boolean) =
+        graphicsLayer { alpha = if ((ticker.value / 500 % 2 == 0L) == colonOn) 1f else 0f }
+    Box {
+        DotMatrixText(
+            clock.replace(':', ' '),
+            Modifier.visibleWhen(colonOn = false),
+            chars = 5,
+            pitch = pitch,
+            marquee = Marquee.Off,
+        )
+        DotMatrixText(
+            clock,
+            Modifier.visibleWhen(colonOn = true),
+            chars = 5,
+            pitch = pitch,
+            marquee = Marquee.Off,
+        )
     }
 }
 

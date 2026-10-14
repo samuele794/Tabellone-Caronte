@@ -47,6 +47,28 @@ class BoardAnnouncementsTest {
     }
 
     @Test
+    fun `dopo reset il tabellone successivo fa solo da base`() {
+        val tracker = BoardAnnouncements()
+        tracker.update(milano, Departures, board(train(), train(number = "2061")))
+        tracker.reset()
+        assertEquals(
+            emptyList(),
+            tracker.codes(board(train(delayMinutes = 30), train(number = "2061", flashing = true))),
+            "le variazioni accumulate durante la pausa non si annunciano",
+        )
+        assertEquals(
+            listOf("P1 9915"),
+            tracker.codes(
+                board(
+                    train(flashing = true, delayMinutes = 30),
+                    train(number = "2061", flashing = true)
+                )
+            ),
+            "dal giro dopo si torna ad annunciare",
+        )
+    }
+
+    @Test
     fun `treno in partenza`() {
         val tracker = BoardAnnouncements()
         tracker.update(milano, Departures, board(train(), train(number = "2061")))

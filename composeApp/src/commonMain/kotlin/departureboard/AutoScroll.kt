@@ -1,8 +1,7 @@
 package departureboard
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
@@ -16,6 +15,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
+import kotlin.math.floor
+import kotlin.math.roundToInt
 
 /**
  * Registra lo scroll fatto dall'utente (rotella, trackpad, trascinamento). Va messo sopra il
@@ -41,12 +42,16 @@ internal class UserScrollTracker : NestedScrollConnection {
 
 /**
  * Scorre tra 0 e [bottom] avanti e indietro a velocità costante, con [pauseMillis] di sosta agli
- * estremi. Se l'utente scorre si ferma, e [resumeMillis] dopo il suo ultimo spostamento riparte
- * nella stessa direzione.
+ * estremi. Si muove a scatti di un punto LED ([dotPx]) allo scatto del [ticker], come i moduli
+ * veri: un frame per scatto invece che uno a ogni vsync, e fermo quando il [ticker] è fermo.
+ * Se l'utente scorre si ferma, e [resumeMillis] dopo il suo ultimo spostamento riparte nella
+ * stessa direzione.
  */
 internal suspend fun ScrollState.autoScroll(
     bottom: Int,
     pxPerSecond: Float,
+    dotPx: Float,
+    ticker: State<Long>,
     pauseMillis: Long,
     resumeMillis: Long,
     user: UserScrollTracker,
@@ -56,7 +61,7 @@ internal suspend fun ScrollState.autoScroll(
     while (true) {
         val interrupted = user.interrupts {
             delay(pause)
-            scrollLinearlyTo(if (down) bottom else 0, pxPerSecond)
+            scrollInDotsTo(if (down) bottom else 0, pxPerSecond, dotPx, ticker)
         }
         if (interrupted) {
             user.awaitIdle(resumeMillis)
@@ -92,8 +97,32 @@ private suspend fun UserScrollTracker.awaitIdle(millis: Long) {
     }
 }
 
-/** Scorre a velocità costante, qualunque sia la distanza da percorrere. */
-private suspend fun ScrollState.scrollLinearlyTo(target: Int, pxPerSecond: Float) {
-    val millis = (abs(target - value) / pxPerSecond * 1000).toInt()
-    animateScrollTo(target, tween(millis, easing = LinearEasing))
+/** Scorre a velocità costante fino a [target], spostandosi solo allo scatto del [ticker]. */
+private suspend fun ScrollState.scrollInDotsTo(
+    target: Int,
+    pxPerSecond: Float,
+    dotPx: Float,
+    ticker: State<Long>,
+) {
+    val start = value
+    val startTick = ticker.value
+    var tick = startTick
+    // Si guarda la posizione calcolata, non [value]: se il contenuto si accorcia, scrollTo si
+    // ferma prima di [target] e il ciclo non finirebbe mai.
+    do {
+        tick = snapshotFlow { ticker.value }.first { it != tick }
+        val position = dotPosition(start, target, dotPx, pxPerSecond * (tick - startTick) / 1000f)
+        if (position != value) scrollTo(position)
+    } while (position != target)
+}
+
+/**
+ * Posizione dopo aver percorso [travelledPx] da [start] verso [target], a punti LED interi
+ * ([dotPx]): l'ultimo passo si ferma esattamente su [target].
+ */
+internal fun dotPosition(start: Int, target: Int, dotPx: Float, travelledPx: Float): Int {
+    val dots = floor(travelledPx / dotPx.coerceAtLeast(1f))
+    val px = (dots * dotPx.coerceAtLeast(1f)).roundToInt()
+    if (px >= abs(target - start)) return target
+    return if (target > start) start + px else start - px
 }
