@@ -6,6 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.geometry.Offset
@@ -22,7 +23,9 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.math.ceil
 
 /** Palette del tabellone. */
@@ -123,6 +126,24 @@ internal fun ledBitmap(
 ) {
     drawLeds(ledGrid(cols, rows, pitchPx), pitchPx, offColor, glow = false)
     drawLeds(lit, pitchPx, color)
+}
+
+/**
+ * Bitmap LED prodotta da [render] su [Dispatchers.Default]. Un tabellone pieno ha centinaia di
+ * matrici: disegnate nel draw bloccherebbero il thread principale per oltre un secondo a ogni
+ * nuova composizione (avvio, rotazione) o cambio di passo. Vale null finché la prima non è pronta;
+ * quando cambiano le [keys] resta quella precedente fino all'arrivo della nuova.
+ */
+@Composable
+internal fun rememberLedBitmap(vararg keys: Any?, render: () -> ImageBitmap): State<ImageBitmap?> {
+    val bitmap = remember { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(*keys) {
+        bitmap.value = withContext(Dispatchers.Default) {
+            // Su Android avvia subito il caricamento della texture, fuori dal primo frame.
+            render().also { it.prepareToDraw() }
+        }
+    }
+    return bitmap
 }
 
 /** Disegna su una ImageBitmap; funziona in common code (Android, desktop, iOS, web). */

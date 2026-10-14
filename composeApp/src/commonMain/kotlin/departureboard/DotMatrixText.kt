@@ -6,9 +6,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -60,37 +61,32 @@ fun DotMatrixText(
         align == DotAlign.End -> max(0, boxCols - run.width)
         else -> max(0, (boxCols - run.width) / 2)
     }
+    val p = with(LocalDensity.current) { pitch.toPx() }
+    // Chi scorre usa una striscia lunga un periodo (testo + spazio), LED spenti compresi:
+    // si sposta a colonne intere, quindi la griglia resta identica.
+    val stripCols = if (scrolling) period else boxCols
+    val leds = rememberLedBitmap(run, startCols, stripCols, p, offColor, color) {
+        val lit = List(run.size) { i ->
+            Offset((startCols + run.xs[i] + 0.5f) * p, (run.ys[i] + 0.5f) * p)
+        }
+        ledBitmap(stripCols, DotMatrixFont.ROWS, p, offColor, lit, color)
+    }
+    val periodPx = (period * p).roundToInt()
 
     Spacer(
         modifier
             .size(pitch * boxCols, pitch * DotMatrixFont.ROWS)
             .clipToBounds()
-            .drawWithCache {
-                val p = pitch.toPx()
-                val lit = List(run.size) { i ->
-                    Offset((startCols + run.xs[i] + 0.5f) * p, (run.ys[i] + 0.5f) * p)
-                }
-                // Chi scorre usa una striscia lunga un periodo (testo + spazio), LED spenti compresi:
-                // si sposta a colonne intere, quindi la griglia resta identica.
-                val bitmap = ledBitmap(
-                    if (scrolling) period else boxCols,
-                    DotMatrixFont.ROWS,
-                    p,
-                    offColor,
-                    lit,
-                    color
-                )
-                val periodPx = (period * p).roundToInt()
-                onDrawBehind {
-                    if (ticker != null) {
-                        // Scorre a scatti interi di una colonna, come i moduli LED reali.
-                        val col = (ticker.value * scrollSpeed / 1000).toLong() % period
-                        val dx = (col * p).roundToInt().toFloat()
-                        drawImage(bitmap, Offset(-dx, 0f))
-                        drawImage(bitmap, Offset(periodPx - dx, 0f))
-                    } else {
-                        drawImage(bitmap)
-                    }
+            .drawBehind {
+                val bitmap = leds.value ?: return@drawBehind
+                if (ticker != null) {
+                    // Scorre a scatti interi di una colonna, come i moduli LED reali.
+                    val col = (ticker.value * scrollSpeed / 1000).toLong() % period
+                    val dx = (col * p).roundToInt().toFloat()
+                    drawImage(bitmap, Offset(-dx, 0f))
+                    drawImage(bitmap, Offset(periodPx - dx, 0f))
+                } else {
+                    drawImage(bitmap)
                 }
             },
     )

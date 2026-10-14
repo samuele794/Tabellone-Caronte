@@ -4,13 +4,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import kotlin.math.max
 import kotlin.math.min
@@ -57,23 +58,18 @@ fun DotMatrixImage(
 ) {
     val cols = slotCols * density
     val dotRows = rows * density
-    val grid = remember(bitmap, cols, dotRows, sampling, threshold) {
-        dotify(bitmap, cols, dotRows, sampling, threshold)
+    val p = with(LocalDensity.current) { pitch.toPx() } / density
+    // Anche il campionamento del logo avviene in background, insieme al disegno dei LED.
+    val leds = rememberLedBitmap(bitmap, cols, dotRows, sampling, threshold, p, offColor, color) {
+        val grid = dotify(bitmap, cols, dotRows, sampling, threshold)
+        val lit = List(grid.size) { i -> Offset((grid.xs[i] + 0.5f) * p, (grid.ys[i] + 0.5f) * p) }
+        ledBitmap(cols, dotRows, p, offColor, lit, color)
     }
     Spacer(
         modifier
             .size(pitch * slotCols, pitch * rows)
-            .drawWithCache {
-                val p = pitch.toPx() / density
-                val lit = List(grid.size) { i ->
-                    Offset(
-                        (grid.xs[i] + 0.5f) * p,
-                        (grid.ys[i] + 0.5f) * p
-                    )
-                }
-                val bitmap = ledBitmap(cols, dotRows, p, offColor, lit, color)
-                onDrawBehind { drawImage(bitmap) }
-            },
+            .clipToBounds()
+            .drawBehind { leds.value?.let { drawImage(it) } },
     )
 }
 

@@ -73,7 +73,9 @@ import rfi.RfiClient
 import rfi.RfiMapper
 import rfi.Station
 import kotlin.time.Clock
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 /** Ogni quanto riscaricare il monitor RFI. */
 private val REFRESH_MILLIS = 30.seconds
@@ -127,6 +129,19 @@ class LiveBoardState(
     /** Stazione e modalità a cui si riferiscono [departures]. */
     private var loadedKey: Pair<Int, BoardMode>? = null
 
+    /** Ultimo tentativo di aggiornamento, riuscito o no. */
+    private var lastRefresh: TimeSource.Monotonic.ValueTimeMark? = null
+
+    /**
+     * Attesa prima del prossimo aggiornamento: zero se i dati sono di un'altra tabella, altrimenti
+     * il resto di [interval]. Serve quando il tabellone torna a schermo (es. dopo una rotazione).
+     */
+    fun nextRefreshIn(interval: Duration): Duration {
+        val last = lastRefresh ?: return Duration.ZERO
+        if (loadedKey != (station.id to mode)) return Duration.ZERO
+        return (interval - last.elapsedNow()).coerceAtLeast(Duration.ZERO)
+    }
+
     suspend fun loadStations() {
         stationsError = null
         try {
@@ -148,6 +163,7 @@ class LiveBoardState(
             announcer?.clear()
         }
         loading = true
+        lastRefresh = TimeSource.Monotonic.markNow()
         try {
             val board = client.board(key.first, key.second)
             departures = mapper.departures(board)
@@ -175,8 +191,9 @@ class LiveBoardState(
 /** Tabellone live a tutto schermo; stazione, modalità e scorrimento si cambiano dalla rotella. */
 @Composable
 fun LiveBoard(state: LiveBoardState, now: LocalDateTime) {
-    LaunchedEffect(Unit) { state.loadStations() }
+    LaunchedEffect(Unit) { if (state.stations.isEmpty()) state.loadStations() }
     LaunchedEffect(state.station.id, state.mode) {
+        delay(state.nextRefreshIn(REFRESH_MILLIS))
         while (isActive) {
             state.refresh()
             delay(REFRESH_MILLIS)
