@@ -58,6 +58,8 @@ data class BoardSettings(
     val flapPageSeconds: Int = 5,
     /** Secondi di lampeggio della riga del treno annunciato, da quando comincia il jingle. */
     val announceBlinkSeconds: Int = 10,
+    /** Volume degli annunci (jingle e voce), in percentuale. */
+    val announceVolume: Int = 100,
 )
 
 /**

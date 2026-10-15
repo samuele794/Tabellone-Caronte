@@ -6,9 +6,10 @@ import kotlinx.coroutines.await
 /** MP3 con un elemento `<audio>`; i byte passano da un Blob URL. */
 class WebSoundPlayer : SoundPlayer {
 
-    override suspend fun play(bytes: ByteArray, onStart: () -> Unit) {
+    override suspend fun play(bytes: ByteArray, volume: Float, onStart: () -> Unit) {
         val url = mp3ObjectUrl(bytes.toUint8Array())
         val audio = Audio(url)
+        audio.volume = volume.toDouble().coerceIn(0.0, 1.0)
         try {
             val ended = CompletableDeferred<Unit>()
             audio.onended = { ended.complete(Unit) }
@@ -31,6 +32,7 @@ class WebSoundPlayer : SoundPlayer {
 private external class Audio(src: String) : JsAny {
     var onended: ((JsAny) -> Unit)?
     var onerror: ((JsAny) -> Unit)?
+    var volume: Double
     fun play(): kotlin.js.Promise<JsAny?>
     fun pause()
 }

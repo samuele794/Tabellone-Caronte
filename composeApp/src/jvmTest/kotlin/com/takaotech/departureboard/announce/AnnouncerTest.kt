@@ -24,9 +24,11 @@ class AnnouncerTest {
      */
     private var gate: CompletableDeferred<Unit>? = null
     private var jingleGate: CompletableDeferred<Unit>? = null
+    private val volumes = mutableListOf<String>()
     private val speech = object : SpeechEngine {
-        override suspend fun speak(text: String, onStart: () -> Unit) {
+        override suspend fun speak(text: String, volume: Float, onStart: () -> Unit) {
             onStart()
+            volumes += "voce $volume"
             gate?.await()
             log += "voce: ${text.substringBefore(',')}"
         }
@@ -36,8 +38,9 @@ class AnnouncerTest {
         }
     }
     private val sound = object : SoundPlayer {
-        override suspend fun play(bytes: ByteArray, onStart: () -> Unit) {
+        override suspend fun play(bytes: ByteArray, volume: Float, onStart: () -> Unit) {
             onStart()
+            volumes += "jingle $volume"
             jingleGate?.await()
             log += "jingle ${bytes.size}"
         }
@@ -160,6 +163,23 @@ class AnnouncerTest {
         }
 
     @Test
+    fun `il volume arriva a jingle e voce, dall'annuncio seguente`() = runTest {
+        val announcer = Announcer(
+            speech,
+            sound,
+            jingle = { ByteArray(1) },
+            context = StandardTestDispatcher(testScheduler)
+        )
+        announcer.enqueue(listOf(announcement("84")))
+        advanceUntilIdle()
+        announcer.volume = 0.4f
+        announcer.enqueue(listOf(announcement("753")))
+        advanceUntilIdle()
+        assertEquals(listOf("jingle 1.0", "voce 1.0", "jingle 0.4", "voce 0.4"), volumes)
+        announcer.close()
+    }
+
+    @Test
     fun `senza jingle started arriva quando comincia la voce`() = runTest {
         val announcer = Announcer(
             speech,
@@ -184,7 +204,7 @@ class AnnouncerTest {
         val errors = mutableListOf<Throwable>()
         val broken = object : SpeechEngine {
             var calls = 0
-            override suspend fun speak(text: String, onStart: () -> Unit) {
+            override suspend fun speak(text: String, volume: Float, onStart: () -> Unit) {
                 if (calls++ == 0) error("voce non installata")
                 log += "voce ok"
             }

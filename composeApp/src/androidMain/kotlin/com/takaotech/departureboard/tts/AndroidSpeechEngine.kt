@@ -1,6 +1,7 @@
 package com.takaotech.departureboard.tts
 
 import android.content.Context
+import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
@@ -43,12 +44,12 @@ class AndroidSpeechEngine(
     @Volatile
     private var fallbackVoice: String? = null
 
-    override suspend fun speak(text: String, onStart: () -> Unit) {
+    override suspend fun speak(text: String, volume: Float, onStart: () -> Unit) {
         val first = mutex.withLock {
             engine ?: newEngine(fallbackVoice ?: voiceName).also { engine = it }
         }
         try {
-            first.speak(text, onStart)
+            first.speak(text, volume, onStart)
         } catch (e: NotStartedException) {
             val retry = mutex.withLock {
                 val network = first.networkVoice()?.name ?: fallbackVoice
@@ -64,7 +65,7 @@ class AndroidSpeechEngine(
                 newEngine(network).also { engine = it }
             }
             try {
-                retry.speak(text, onStart)
+                retry.speak(text, volume, onStart)
             } catch (e2: NotStartedException) {
                 mutex.withLock { if (engine === retry) engine = null }
                 retry.close()
@@ -152,17 +153,18 @@ class AndroidSpeechEngine(
         }
 
         /**
-         * Legge [text] e ritorna a fine lettura, chiamando [onStart] quando il motore comincia a
-         * parlare; [NotStartedException] se non parte.
+         * Legge [text] al [volume] e ritorna a fine lettura, chiamando [onStart] quando il motore
+         * comincia a parlare; [NotStartedException] se non parte.
          */
-        suspend fun speak(text: String, onStart: () -> Unit) {
+        suspend fun speak(text: String, volume: Float, onStart: () -> Unit) {
             prepare()
             val id = "annuncio-${ids.incrementAndGet()}"
             val start = CompletableDeferred<Unit>()
             val done = CompletableDeferred<Unit>()
             started[id] = start
             pending[id] = done
-            val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
+            val params = Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume) }
+            val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, id)
             log { "$id: speak = $result, voce ${voiceName ?: "predefinita"}" }
             if (result != TextToSpeech.SUCCESS) {
                 started.remove(id)

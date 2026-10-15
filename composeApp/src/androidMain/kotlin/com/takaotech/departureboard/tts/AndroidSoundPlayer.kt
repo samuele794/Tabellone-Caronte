@@ -14,7 +14,7 @@ class AndroidSoundPlayer(context: Context) : SoundPlayer {
 
     private val cacheDir = context.applicationContext.cacheDir
 
-    override suspend fun play(bytes: ByteArray, onStart: () -> Unit) {
+    override suspend fun play(bytes: ByteArray, volume: Float, onStart: () -> Unit) {
         val file = withContext(Dispatchers.IO) {
             File(cacheDir, "sound-${bytes.contentHashCode()}.mp3").apply {
                 if (length() != bytes.size.toLong()) writeBytes(bytes)
@@ -33,6 +33,7 @@ class AndroidSoundPlayer(context: Context) : SoundPlayer {
                     true
                 }
                 player.setDataSource(file.path)
+                player.setVolume(volume, volume)
                 player.prepareAsync()
             }
         } finally {

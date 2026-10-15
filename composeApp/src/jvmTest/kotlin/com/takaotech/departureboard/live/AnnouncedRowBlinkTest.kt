@@ -43,7 +43,7 @@ class AnnouncedRowBlinkTest {
 
     /** La voce dura un minuto: più di qualsiasi lampeggio. */
     private val speech = object : SpeechEngine {
-        override suspend fun speak(text: String, onStart: () -> Unit) {
+        override suspend fun speak(text: String, volume: Float, onStart: () -> Unit) {
             onStart()
             delay(60_000)
         }
@@ -53,7 +53,7 @@ class AnnouncedRowBlinkTest {
 
     /** Il lettore impiega mezzo secondo a preparare il jingle, che dura 5 secondi come quello vero. */
     private val sound = object : SoundPlayer {
-        override suspend fun play(bytes: ByteArray, onStart: () -> Unit) {
+        override suspend fun play(bytes: ByteArray, volume: Float, onStart: () -> Unit) {
             delay(PREPARE_MILLIS)
             onStart()
             delay(JINGLE_MILLIS)

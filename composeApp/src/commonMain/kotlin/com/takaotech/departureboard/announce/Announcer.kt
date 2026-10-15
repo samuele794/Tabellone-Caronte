@@ -59,6 +59,10 @@ class Announcer(
     /** Ogni annuncio nel momento in cui comincia a sentirsi: col jingle, o con la voce se manca. */
     val started: SharedFlow<Announcement> = startedFlow.asSharedFlow()
 
+    /** Volume di jingle e voce (0..1, rispetto a quello del dispositivo); vale dall'annuncio seguente. */
+    @Volatile
+    var volume: Float = 1f
+
     /** Località RFI per sciogliere le abbreviazioni nei testi; si aggiorna quando arriva l'elenco. */
     @Volatile
     var places: PlaceNames = PlaceNames.None
@@ -105,8 +109,9 @@ class Announcer(
                     startedFlow.tryEmit(announcement)
                 }
             }
-            jingleBytes.await()?.let { sound.play(it, started) }
-            speech.speak(text, started)
+            val volume = volume
+            jingleBytes.await()?.let { sound.play(it, volume, started) }
+            speech.speak(text, volume, started)
             DebugLog.d(TAG) { "Finito ${announcement.summary()}" }
         } catch (e: CancellationException) {
             DebugLog.d(TAG) { "Interrotto ${announcement.summary()}" }

@@ -285,14 +285,56 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun `il volume degli annunci sopravvive alla riapertura e arriva all'annunciatore`() =
+        runBlocking {
+            val silent = object : SpeechEngine {
+                override suspend fun speak(text: String, volume: Float, onStart: () -> Unit) = Unit
+                override fun close() {}
+            }
+            val mute = object : SoundPlayer {
+                override suspend fun play(bytes: ByteArray, volume: Float, onStart: () -> Unit) =
+                    Unit
+
+                override fun close() {}
+            }
+            SettingsStore(path).use { store ->
+                Announcer(silent, mute, jingle = { ByteArray(0) }).use { announcer ->
+                    val state =
+                        LiveBoardState(sources, announcer = announcer, settingsStore = store)
+                    state.restoreSettings()
+                    state.announceVolume = 30
+                    assertEquals(0.3f, announcer.volume)
+                    store.awaitSaved(
+                        BoardSettings(
+                            Selection(StationSource.Rfi, milano),
+                            announceVolume = 30
+                        )
+                    )
+                }
+            }
+
+            SettingsStore(path).use { store ->
+                Announcer(silent, mute, jingle = { ByteArray(0) }).use { announcer ->
+                    val state =
+                        LiveBoardState(sources, announcer = announcer, settingsStore = store)
+                    assertEquals(LiveBoardState.DEFAULT_ANNOUNCE_VOLUME, state.announceVolume)
+                    state.restoreSettings()
+                    assertEquals(30, state.announceVolume)
+                    assertEquals(0.3f, announcer.volume)
+                }
+            }
+        }
+
+    @Test
     fun `durante un annuncio le palette si abbassano`() = runBlocking {
         val gate = CompletableDeferred<Unit>()
         val speech = object : SpeechEngine {
-            override suspend fun speak(text: String, onStart: () -> Unit) = gate.await()
+            override suspend fun speak(text: String, volume: Float, onStart: () -> Unit) =
+                gate.await()
             override fun close() {}
         }
         val sound = object : SoundPlayer {
-            override suspend fun play(bytes: ByteArray, onStart: () -> Unit) {}
+            override suspend fun play(bytes: ByteArray, volume: Float, onStart: () -> Unit) {}
             override fun close() {}
         }
         Announcer(speech, sound, jingle = { ByteArray(0) }).use { announcer ->

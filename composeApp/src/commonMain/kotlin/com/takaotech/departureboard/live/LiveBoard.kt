@@ -74,6 +74,7 @@ import com.takaotech.departureboard.cache.StationCache
 import com.takaotech.departureboard.cache.StationSource
 import com.takaotech.departureboard.debuglog.DebugLog
 import com.takaotech.departureboard.live.LiveBoardState.Companion.ANNOUNCE_BLINK_OPTIONS
+import com.takaotech.departureboard.live.LiveBoardState.Companion.ANNOUNCE_VOLUME_OPTIONS
 import com.takaotech.departureboard.live.LiveBoardState.Companion.DEFAULT_REFRESH
 import com.takaotech.departureboard.live.LiveBoardState.Companion.FLAP_PAGE_PAUSE_OPTIONS
 import com.takaotech.departureboard.live.LiveBoardState.Companion.FLAP_VOLUME_OPTIONS
@@ -153,6 +154,7 @@ class LiveBoardState(
     private var flapVolumeState by mutableIntStateOf(DEFAULT_FLAP_VOLUME)
     private var flapPagePauseState by mutableStateOf(DEFAULT_FLAP_PAGE_PAUSE)
     private var announceBlinkState by mutableStateOf(DEFAULT_ANNOUNCE_BLINK)
+    private var announceVolumeState by mutableIntStateOf(DEFAULT_ANNOUNCE_VOLUME)
 
     /**
      * Se le impostazioni salvate sono già state ripristinate (o non c'è niente da ripristinare):
@@ -166,7 +168,7 @@ class LiveBoardState(
 
     private enum class Setting {
         Selection, AutoScroll, Announce, Refresh, ListRefresh, EcoMode, ScreenOnOnlyWhenCharging, OledPalette,
-        BoardStyle, FlapSound, FlapVolume, FlapPagePause, AnnounceBlink,
+        BoardStyle, FlapSound, FlapVolume, FlapPagePause, AnnounceBlink, AnnounceVolume,
     }
 
     /** Intervalli di aggiornamento scelti, per fornitore; chi manca usa [DEFAULT_REFRESH]. */
@@ -319,6 +321,22 @@ class LiveBoardState(
     }
 
     /**
+     * Volume degli annunci (jingle e voce), in percentuale; agganciato all'opzione più vicina di
+     * [ANNOUNCE_VOLUME_OPTIONS]. Vale dall'annuncio seguente.
+     */
+    var announceVolume: Int
+        get() = announceVolumeState
+        set(value) {
+            applyAnnounceVolume(value)
+            changed(Setting.AnnounceVolume)
+        }
+
+    private fun applyAnnounceVolume(percent: Int) {
+        announceVolumeState = ANNOUNCE_VOLUME_OPTIONS.minBy { abs(it - percent) }
+        announcer?.volume = announceVolumeState / 100f
+    }
+
+    /**
      * Pausa su ogni pagina di un testo lungo nel tabellone a palette, contata dalla fine della
      * girata; agganciata all'opzione più vicina di [FLAP_PAGE_PAUSE_OPTIONS].
      */
@@ -426,6 +444,7 @@ class LiveBoardState(
         if (Setting.FlapPagePause !in changedBeforeRestore) {
             flapPagePauseState = saved.flapPageSeconds.seconds.nearestOf(FLAP_PAGE_PAUSE_OPTIONS)
         }
+        if (Setting.AnnounceVolume !in changedBeforeRestore) applyAnnounceVolume(saved.announceVolume)
         if (Setting.AnnounceBlink !in changedBeforeRestore) {
             announceBlinkState =
                 saved.announceBlinkSeconds.seconds.nearestOf(ANNOUNCE_BLINK_OPTIONS)
@@ -465,6 +484,7 @@ class LiveBoardState(
                 flapVolume = flapVolume,
                 flapPageSeconds = flapPagePause.inWholeSeconds.toInt(),
                 announceBlinkSeconds = announceBlink.inWholeSeconds.toInt(),
+                announceVolume = announceVolume,
             )
         )
     }
@@ -603,6 +623,12 @@ class LiveBoardState(
     }
 
     companion object {
+        /** Volume degli annunci se non se ne è scelto un altro, in percentuale. */
+        const val DEFAULT_ANNOUNCE_VOLUME = 100
+
+        /** Volumi degli annunci tra cui scegliere, in percentuale. */
+        val ANNOUNCE_VOLUME_OPTIONS = (10..100 step 10).toList()
+
         /** Lampeggio della riga del treno annunciato se non se ne è scelto un altro. */
         val DEFAULT_ANNOUNCE_BLINK = 10.seconds
 
@@ -822,6 +848,15 @@ private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDism
                 SwitchRow("Scorrimento automatico", state.autoScroll) { state.autoScroll = it }
                 if (state.canAnnounce) {
                     SwitchRow("Annunci sonori", state.announce) { state.announce = it }
+                    if (state.announce) {
+                        VolumeSlider(
+                            label = "Volume degli annunci",
+                            value = state.announceVolume,
+                            options = LiveBoardState.ANNOUNCE_VOLUME_OPTIONS,
+                            onChange = { state.announceVolume = it },
+                            hint = "Jingle e voce, rispetto al volume del dispositivo",
+                        )
+                    }
                 }
                 if (state.boardStyle == BoardStyle.Led) {
                     IntervalSlider(
