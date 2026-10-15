@@ -222,6 +222,37 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun `la durata del lampeggio sopravvive alla riapertura`() = runBlocking {
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            state.restoreSettings()
+            state.announceBlink = 5.seconds
+            store.awaitSaved(
+                BoardSettings(Selection(StationSource.Rfi, milano), announceBlinkSeconds = 5)
+            )
+        }
+
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            assertEquals(LiveBoardState.DEFAULT_ANNOUNCE_BLINK, state.announceBlink)
+            state.restoreSettings()
+            assertEquals(5.seconds, state.announceBlink)
+        }
+    }
+
+    @Test
+    fun `una durata del lampeggio scritta a mano si aggancia all'opzione più vicina`() =
+        runBlocking {
+            File(path).apply { parentFile.mkdirs() }.writeText("""{"announceBlinkSeconds":20}""")
+
+            SettingsStore(path).use { store ->
+                val state = LiveBoardState(sources, settingsStore = store)
+                state.restoreSettings()
+                assertEquals(15.seconds, state.announceBlink)
+            }
+        }
+
+    @Test
     fun `il volume delle palette sopravvive alla riapertura e arriva al crepitio`() = runBlocking {
         SettingsStore(path).use { store ->
             val state = LiveBoardState(sources, settingsStore = store)
@@ -257,11 +288,11 @@ class SettingsStoreTest {
     fun `durante un annuncio le palette si abbassano`() = runBlocking {
         val gate = CompletableDeferred<Unit>()
         val speech = object : SpeechEngine {
-            override suspend fun speak(text: String) = gate.await()
+            override suspend fun speak(text: String, onStart: () -> Unit) = gate.await()
             override fun close() {}
         }
         val sound = object : SoundPlayer {
-            override suspend fun play(bytes: ByteArray) {}
+            override suspend fun play(bytes: ByteArray, onStart: () -> Unit) {}
             override fun close() {}
         }
         Announcer(speech, sound, jingle = { ByteArray(0) }).use { announcer ->

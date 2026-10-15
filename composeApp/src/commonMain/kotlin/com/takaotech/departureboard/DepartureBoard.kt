@@ -25,6 +25,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -88,9 +89,17 @@ data class Departure(
     val lamps: Lamps = Lamps.Off,
     /** Testo della fonte al posto dei minuti ("RITARDO"): se c'è, si mostra com'è e scorre se non entra. */
     val delayText: String = "",
+    /**
+     * Il testo della riga lampeggia finché è true (solo a LED): segnala il treno dell'annuncio
+     * appena partito. Il lampeggio comincia spento, con fasi di [BLINK_PHASE_MILLIS].
+     */
+    val blink: Boolean = false,
 )
 
 enum class Lamps { Off, On, Blinking }
+
+/** Durata di ogni fase (spenta o accesa) del lampeggio di una riga: multiplo dei passi del ticker. */
+const val BLINK_PHASE_MILLIS = 600L
 
 /** Etichetta bilingue: lingua principale sopra, seconda lingua sotto. */
 @Immutable
@@ -624,6 +633,8 @@ private fun HeaderLabel(label: BoardLabel, widthDots: Float, p: Dp, colors: Boar
 
 @Composable
 private fun DepartureRow(d: Departure?, layout: BoardLayout, g: BoardGeometry, p: Dp) {
+    val lit =
+        if (d?.blink == true && LocalBoardStyle.current == BoardStyle.Led) rememberBlink() else null
     Row(
         horizontalArrangement = Arrangement.spacedBy(p * U.COL_GAP),
         verticalAlignment = Alignment.CenterVertically,
@@ -637,18 +648,25 @@ private fun DepartureRow(d: Departure?, layout: BoardLayout, g: BoardGeometry, p
                     d?.let { "${it.category.padEnd(2)} ${it.number}" }.orEmpty(),
                     chars = layout.trainChars,
                     layout = layout,
+                    lit = lit,
                     marquee = Marquee.Off,
                 )
             }
         }
         Module(g.destination, p) {
-            BoardText(d?.destination.orEmpty(), chars = layout.destinationChars, layout = layout)
+            BoardText(
+                d?.destination.orEmpty(),
+                chars = layout.destinationChars,
+                layout = layout,
+                lit = lit,
+            )
         }
         Module(g.time, p) {
             BoardText(
                 d?.time.orEmpty(),
                 chars = layout.timeChars,
                 layout = layout,
+                lit = lit,
                 marquee = Marquee.Off
             )
         }
@@ -660,18 +678,20 @@ private fun DepartureRow(d: Departure?, layout: BoardLayout, g: BoardGeometry, p
                 delay,
                 chars = layout.delayChars,
                 layout = layout,
+                lit = lit,
                 align = DotAlign.End,
                 marquee = if (text.isEmpty()) Marquee.Off else Marquee.Auto,
             )
         }
         Module(g.info, p) {
-            BoardText(d?.info.orEmpty(), chars = layout.infoChars, layout = layout)
+            BoardText(d?.info.orEmpty(), chars = layout.infoChars, layout = layout, lit = lit)
         }
         Module(g.platform, p) {
             BoardText(
                 d?.platform.orEmpty(),
                 chars = layout.platformChars,
                 layout = layout,
+                lit = lit,
                 align = DotAlign.Center,
                 marquee = Marquee.Off,
             )
@@ -800,6 +820,8 @@ private fun BoardText(
     marquee: Marquee = Marquee.Auto,
     /** Altezza delle palette, in punti di [pitch]. */
     flapHeight: Float = Flap.HEIGHT,
+    /** Lampeggio dei LED (vedi [DotMatrixText]); le palette lo ignorano. */
+    lit: (() -> Boolean)? = null,
 ) {
     if (LocalBoardStyle.current == BoardStyle.SplitFlap) {
         SplitFlapText(
@@ -819,6 +841,7 @@ private fun BoardText(
             align = align,
             marquee = marquee,
             scrollSpeed = layout.marqueeColsPerSecond,
+            lit = lit,
         )
     }
 }
@@ -853,6 +876,17 @@ private fun LedBlank(cols: Int, rows: Int) {
             leds.value?.let { drawImage(it) }
         },
     )
+}
+
+/**
+ * Fase del lampeggio di una riga ([Departure.blink]), contata dal primo frame: false = LED spenti.
+ * Il ticker si legge solo al disegno, così la riga non si ricompone a ogni scatto.
+ */
+@Composable
+private fun rememberBlink(): () -> Boolean {
+    val ticker = LocalLedTicker.current ?: rememberLedTicker()
+    val start = remember { Snapshot.withoutReadObservation { ticker.value } }
+    return remember(ticker, start) { { (ticker.value - start) / BLINK_PHASE_MILLIS % 2 == 1L } }
 }
 
 /** Le due spie rotonde a destra di ogni riga. Lampeggiano alternate. */

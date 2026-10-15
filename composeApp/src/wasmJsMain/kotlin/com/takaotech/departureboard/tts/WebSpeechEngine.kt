@@ -10,10 +10,12 @@ import kotlin.coroutines.resumeWithException
  */
 class WebSpeechEngine : SpeechEngine {
 
-    override suspend fun speak(text: String) = suspendCancellableCoroutine { cont ->
+    override suspend fun speak(text: String, onStart: () -> Unit) =
+        suspendCancellableCoroutine { cont ->
         val utterance = SpeechSynthesisUtterance(text)
         utterance.lang = "it-IT"
         italianVoice()?.let { utterance.voice = it }
+            utterance.onstart = { if (cont.isActive) onStart() }
         utterance.onend = { if (cont.isActive) cont.resume(Unit) }
         utterance.onerror = { event ->
             if (cont.isActive) cont.resumeWithException(IllegalStateException("Sintesi vocale: ${event.error}"))
@@ -37,6 +39,7 @@ fun unlockSpeech() = speechSynthesis.speak(SpeechSynthesisUtterance(""))
 private external class SpeechSynthesisUtterance(text: String) : JsAny {
     var lang: String
     var voice: SpeechSynthesisVoice?
+    var onstart: ((JsAny) -> Unit)?
     var onend: ((JsAny) -> Unit)?
     var onerror: ((SpeechSynthesisErrorEvent) -> Unit)?
 }

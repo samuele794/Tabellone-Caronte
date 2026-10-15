@@ -14,7 +14,7 @@ class AndroidSoundPlayer(context: Context) : SoundPlayer {
 
     private val cacheDir = context.applicationContext.cacheDir
 
-    override suspend fun play(bytes: ByteArray) {
+    override suspend fun play(bytes: ByteArray, onStart: () -> Unit) {
         val file = withContext(Dispatchers.IO) {
             File(cacheDir, "sound-${bytes.contentHashCode()}.mp3").apply {
                 if (length() != bytes.size.toLong()) writeBytes(bytes)
@@ -23,7 +23,10 @@ class AndroidSoundPlayer(context: Context) : SoundPlayer {
         val player = MediaPlayer()
         try {
             suspendCancellableCoroutine { cont ->
-                player.setOnPreparedListener { it.start() }
+                player.setOnPreparedListener {
+                    it.start()
+                    if (cont.isActive) onStart()
+                }
                 player.setOnCompletionListener { if (cont.isActive) cont.resume(Unit) }
                 player.setOnErrorListener { _, what, extra ->
                     if (cont.isActive) cont.resumeWithException(IllegalStateException("MediaPlayer: errore $what/$extra"))

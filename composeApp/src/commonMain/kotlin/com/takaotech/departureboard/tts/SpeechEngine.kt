@@ -5,6 +5,9 @@ package com.takaotech.departureboard.tts
  * operativo su desktop…); [com.takaotech.departureboard.announce.Announcer] lo usa solo attraverso questa interfaccia.
  */
 interface SpeechEngine : AutoCloseable {
-    /** Legge [text] in italiano e ritorna quando la lettura è finita; cancellare la interrompe. */
-    suspend fun speak(text: String)
+    /**
+     * Legge [text] in italiano e ritorna quando la lettura è finita; cancellare la interrompe.
+     * [onStart] si chiama una volta, quando la voce comincia a sentirsi (non se non parte mai).
+     */
+    suspend fun speak(text: String, onStart: () -> Unit = {})
 }

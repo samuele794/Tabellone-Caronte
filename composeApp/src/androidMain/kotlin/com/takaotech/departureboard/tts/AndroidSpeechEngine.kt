@@ -43,12 +43,12 @@ class AndroidSpeechEngine(
     @Volatile
     private var fallbackVoice: String? = null
 
-    override suspend fun speak(text: String) {
+    override suspend fun speak(text: String, onStart: () -> Unit) {
         val first = mutex.withLock {
             engine ?: newEngine(fallbackVoice ?: voiceName).also { engine = it }
         }
         try {
-            first.speak(text)
+            first.speak(text, onStart)
         } catch (e: NotStartedException) {
             val retry = mutex.withLock {
                 val network = first.networkVoice()?.name ?: fallbackVoice
@@ -64,7 +64,7 @@ class AndroidSpeechEngine(
                 newEngine(network).also { engine = it }
             }
             try {
-                retry.speak(text)
+                retry.speak(text, onStart)
             } catch (e2: NotStartedException) {
                 mutex.withLock { if (engine === retry) engine = null }
                 retry.close()
@@ -151,8 +151,11 @@ class AndroidSpeechEngine(
             prepared = true
         }
 
-        /** Legge [text] e ritorna a fine lettura; [NotStartedException] se il motore non parte. */
-        suspend fun speak(text: String) {
+        /**
+         * Legge [text] e ritorna a fine lettura, chiamando [onStart] quando il motore comincia a
+         * parlare; [NotStartedException] se non parte.
+         */
+        suspend fun speak(text: String, onStart: () -> Unit) {
             prepare()
             val id = "annuncio-${ids.incrementAndGet()}"
             val start = CompletableDeferred<Unit>()
@@ -170,6 +173,7 @@ class AndroidSpeechEngine(
                 // Se il motore non parte mai la coda degli annunci resterebbe ferma per sempre.
                 withTimeoutOrNull(START_TIMEOUT) { start.await() }
                     ?: throw NotStartedException("$id: il motore non ha iniziato a parlare dopo $START_TIMEOUT")
+                onStart()
                 done.await()
             } finally {
                 started.remove(id)

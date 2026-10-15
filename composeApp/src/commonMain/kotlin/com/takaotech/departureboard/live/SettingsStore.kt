@@ -56,6 +56,8 @@ data class BoardSettings(
     val flapVolume: Int = 100,
     /** Secondi di pausa su ogni pagina di un testo lungo, dalla fine della girata. */
     val flapPageSeconds: Int = 5,
+    /** Secondi di lampeggio della riga del treno annunciato, da quando comincia il jingle. */
+    val announceBlinkSeconds: Int = 4,
 )
 
 /**

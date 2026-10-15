@@ -13,7 +13,10 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -50,6 +53,11 @@ class Announcer(
 
     /** true mentre si diffonde un annuncio, jingle compreso. */
     val speaking: Flow<Boolean> = active.map { it > 0 }.distinctUntilChanged()
+
+    private val startedFlow = MutableSharedFlow<Announcement>(extraBufferCapacity = 16)
+
+    /** Ogni annuncio nel momento in cui comincia a sentirsi: col jingle, o con la voce se manca. */
+    val started: SharedFlow<Announcement> = startedFlow.asSharedFlow()
 
     /** Località RFI per sciogliere le abbreviazioni nei testi; si aggiorna quando arriva l'elenco. */
     @Volatile
@@ -90,8 +98,15 @@ class Announcer(
         active.update { it + 1 }
         try {
             DebugLog.d(TAG) { "Diffondo ${announcement.summary()}: $text" }
-            jingleBytes.await()?.let { sound.play(it) }
-            speech.speak(text)
+            var signalled = false
+            val started = {
+                if (!signalled) {
+                    signalled = true
+                    startedFlow.tryEmit(announcement)
+                }
+            }
+            jingleBytes.await()?.let { sound.play(it, started) }
+            speech.speak(text, started)
             DebugLog.d(TAG) { "Finito ${announcement.summary()}" }
         } catch (e: CancellationException) {
             DebugLog.d(TAG) { "Interrotto ${announcement.summary()}" }

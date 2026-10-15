@@ -9,9 +9,13 @@ import java.io.ByteArrayInputStream
 /** MP3 su desktop con JLayer: `javax.sound` da solo non decodifica gli MP3. */
 class JvmSoundPlayer : SoundPlayer {
 
-    override suspend fun play(bytes: ByteArray) = coroutineScope {
+    override suspend fun play(bytes: ByteArray, onStart: () -> Unit) = coroutineScope {
         val player = Player(ByteArrayInputStream(bytes))
-        val playing = async(Dispatchers.IO) { player.play() }
+        val playing = async(Dispatchers.IO) {
+            // JLayer non avvisa quando suona: decodifica e suona un frame alla volta, quindi parte subito.
+            onStart()
+            player.play()
+        }
         try {
             playing.await()
         } finally {

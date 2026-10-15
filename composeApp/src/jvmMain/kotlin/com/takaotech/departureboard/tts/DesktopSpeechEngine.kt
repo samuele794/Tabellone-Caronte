@@ -26,7 +26,7 @@ class DesktopSpeechEngine(private val voice: String? = null) : SpeechEngine {
         }.getOrNull()
     }
 
-    override suspend fun speak(text: String) {
+    override suspend fun speak(text: String, onStart: () -> Unit) {
         val (command, stdin) = withContext(Dispatchers.IO) { command(text) }
         val process = ProcessBuilder(command)
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)
@@ -36,6 +36,8 @@ class DesktopSpeechEngine(private val voice: String? = null) : SpeechEngine {
             withContext(Dispatchers.IO) {
                 process.outputStream.use { out -> stdin?.let { out.write(it.toByteArray(Charsets.UTF_8)) } }
             }
+            // I comandi non dicono quando comincia l'audio: si parte da quando hanno il testo.
+            onStart()
             // Cancellare la coroutine interrompe l'attesa e il finally chiude il processo.
             val exit = runInterruptible(Dispatchers.IO) { process.waitFor() }
             check(exit == 0) { "${command.first()} è uscito con codice $exit" }

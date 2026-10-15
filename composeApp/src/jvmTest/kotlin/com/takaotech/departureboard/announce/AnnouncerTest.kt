@@ -18,10 +18,15 @@ class AnnouncerTest {
 
     private val log = mutableListOf<String>()
 
-    /** Engine finti: registrano le chiamate; se [gate] è impostato la voce aspetta lo sblocco. */
+    /**
+     * Engine finti: registrano le chiamate. Se [gate] è impostato la voce, appena cominciata,
+     * aspetta lo sblocco; se lo è [jingleGate], il jingle appena cominciato.
+     */
     private var gate: CompletableDeferred<Unit>? = null
+    private var jingleGate: CompletableDeferred<Unit>? = null
     private val speech = object : SpeechEngine {
-        override suspend fun speak(text: String) {
+        override suspend fun speak(text: String, onStart: () -> Unit) {
+            onStart()
             gate?.await()
             log += "voce: ${text.substringBefore(',')}"
         }
@@ -31,7 +36,9 @@ class AnnouncerTest {
         }
     }
     private val sound = object : SoundPlayer {
-        override suspend fun play(bytes: ByteArray) {
+        override suspend fun play(bytes: ByteArray, onStart: () -> Unit) {
+            onStart()
+            jingleGate?.await()
             log += "jingle ${bytes.size}"
         }
 
@@ -120,11 +127,64 @@ class AnnouncerTest {
     }
 
     @Test
+    fun `started segnala ogni annuncio quando comincia il jingle, una volta sola e in ordine`() =
+        runTest {
+            val announcer = Announcer(
+                speech,
+                sound,
+                jingle = { ByteArray(1) },
+                context = StandardTestDispatcher(testScheduler)
+            )
+            val started = mutableListOf<String>()
+            val watch = launch { announcer.started.collect { started += it.train.number } }
+            advanceUntilIdle()
+            jingleGate = CompletableDeferred()
+            gate = CompletableDeferred()
+            announcer.enqueue(listOf(announcement("84"), announcement("753")))
+            advanceUntilIdle()
+            assertEquals(listOf("84"), started, "segnalato appena parte il jingle")
+
+            jingleGate!!.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(
+                listOf("84"),
+                started,
+                "la voce non lo segnala di nuovo; il secondo aspetta"
+            )
+
+            gate!!.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(listOf("84", "753"), started)
+            watch.cancel()
+            announcer.close()
+        }
+
+    @Test
+    fun `senza jingle started arriva quando comincia la voce`() = runTest {
+        val announcer = Announcer(
+            speech,
+            sound,
+            jingle = { error("jingle mancante") },
+            context = StandardTestDispatcher(testScheduler),
+            onError = {},
+        )
+        val started = mutableListOf<String>()
+        val watch = launch { announcer.started.collect { started += it.train.number } }
+        advanceUntilIdle()
+        announcer.enqueue(listOf(announcement("84")))
+        advanceUntilIdle()
+        assertEquals(listOf("84"), started)
+        assertEquals(listOf("voce: Il treno Alta Velocità ottantaquattro di Trenitalia"), log)
+        watch.cancel()
+        announcer.close()
+    }
+
+    @Test
     fun `un errore del motore non ferma i successivi`() = runTest {
         val errors = mutableListOf<Throwable>()
         val broken = object : SpeechEngine {
             var calls = 0
-            override suspend fun speak(text: String) {
+            override suspend fun speak(text: String, onStart: () -> Unit) {
                 if (calls++ == 0) error("voce non installata")
                 log += "voce ok"
             }

@@ -6,7 +6,7 @@ import kotlinx.coroutines.await
 /** MP3 con un elemento `<audio>`; i byte passano da un Blob URL. */
 class WebSoundPlayer : SoundPlayer {
 
-    override suspend fun play(bytes: ByteArray) {
+    override suspend fun play(bytes: ByteArray, onStart: () -> Unit) {
         val url = mp3ObjectUrl(bytes.toUint8Array())
         val audio = Audio(url)
         try {
@@ -16,6 +16,8 @@ class WebSoundPlayer : SoundPlayer {
                 { ended.completeExceptionally(IllegalStateException("Audio non riproducibile")) }
             // Rifiutata se il browser blocca la riproduzione perché manca un gesto dell'utente.
             audio.play().await<JsAny?>()
+            // La promessa si risolve quando la riproduzione è cominciata.
+            onStart()
             ended.await()
         } finally {
             audio.pause()

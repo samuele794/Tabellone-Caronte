@@ -46,6 +46,11 @@ fun DotMatrixText(
     scrollSpeed: Float = 10f,
     /** Spazio vuoto, in caratteri, tra la fine del testo e la sua ripetizione. */
     scrollGapChars: Int = 4,
+    /**
+     * Lampeggio: se c'è, a ogni disegno dice se i LED accesi si vedono; quando ritorna false il
+     * modulo mostra solo quelli spenti. Va letto al disegno, così non ricompone.
+     */
+    lit: (() -> Boolean)? = null,
 ) {
     val run = remember(text) { DotMatrixFont.layout(text) }
     val boxCols = DotMatrixFont.widthOf(chars)
@@ -72,6 +77,13 @@ fun DotMatrixText(
         }
         ledTiles(stripCols, DotMatrixFont.ROWS, p, offColor, lit, color)
     }
+    val blank = if (lit != null) {
+        rememberLedTiles(boxCols, p, offColor) {
+            ledTiles(boxCols, DotMatrixFont.ROWS, p, offColor, emptyList(), color)
+        }
+    } else {
+        null
+    }
     val periodPx = (period * p).roundToInt()
 
     Spacer(
@@ -80,7 +92,10 @@ fun DotMatrixText(
             .clipToBounds()
             .drawBehind {
                 val tiles = leds.value ?: return@drawBehind
-                if (ticker != null) {
+                val off = blank?.value
+                if (off != null && lit?.invoke() == false) {
+                    drawTiles(off, 0f)
+                } else if (ticker != null) {
                     // Scorre a scatti interi di una colonna, come i moduli LED reali.
                     val col = (ticker.value * scrollSpeed / 1000).toLong() % period
                     val dx = (col * p).roundToInt().toFloat()

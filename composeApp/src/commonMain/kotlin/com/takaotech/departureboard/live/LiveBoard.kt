@@ -73,6 +73,7 @@ import com.takaotech.departureboard.announce.PlaceNames
 import com.takaotech.departureboard.cache.StationCache
 import com.takaotech.departureboard.cache.StationSource
 import com.takaotech.departureboard.debuglog.DebugLog
+import com.takaotech.departureboard.live.LiveBoardState.Companion.ANNOUNCE_BLINK_OPTIONS
 import com.takaotech.departureboard.live.LiveBoardState.Companion.DEFAULT_REFRESH
 import com.takaotech.departureboard.live.LiveBoardState.Companion.FLAP_PAGE_PAUSE_OPTIONS
 import com.takaotech.departureboard.live.LiveBoardState.Companion.FLAP_VOLUME_OPTIONS
@@ -83,6 +84,7 @@ import com.takaotech.departureboard.rfi.Station
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -150,6 +152,7 @@ class LiveBoardState(
     private var flapSoundState by mutableStateOf(true)
     private var flapVolumeState by mutableIntStateOf(DEFAULT_FLAP_VOLUME)
     private var flapPagePauseState by mutableStateOf(DEFAULT_FLAP_PAGE_PAUSE)
+    private var announceBlinkState by mutableStateOf(DEFAULT_ANNOUNCE_BLINK)
 
     /**
      * Se le impostazioni salvate sono già state ripristinate (o non c'è niente da ripristinare):
@@ -163,7 +166,7 @@ class LiveBoardState(
 
     private enum class Setting {
         Selection, AutoScroll, Announce, Refresh, ListRefresh, EcoMode, ScreenOnOnlyWhenCharging, OledPalette,
-        BoardStyle, FlapSound, FlapVolume, FlapPagePause,
+        BoardStyle, FlapSound, FlapVolume, FlapPagePause, AnnounceBlink,
     }
 
     /** Intervalli di aggiornamento scelti, per fornitore; chi manca usa [DEFAULT_REFRESH]. */
@@ -327,6 +330,17 @@ class LiveBoardState(
         }
 
     /**
+     * Quanto lampeggia (a LED) la riga del treno annunciato, da quando comincia il jingle;
+     * agganciata all'opzione più vicina di [ANNOUNCE_BLINK_OPTIONS].
+     */
+    var announceBlink: Duration
+        get() = announceBlinkState
+        set(value) {
+            announceBlinkState = value.nearestOf(ANNOUNCE_BLINK_OPTIONS)
+            changed(Setting.AnnounceBlink)
+        }
+
+    /**
      * Abbassa il crepitio delle palette mentre si diffonde un annuncio
      * ([FlapClatter.DUCKED_VOLUME]); gira finché non viene cancellata.
      */
@@ -339,6 +353,33 @@ class LiveBoardState(
             clatter.ducked = false
         }
     }
+
+    /** Numero del treno dell'annuncio appena cominciato: la sua riga lampeggia per [announceBlink]. */
+    var announcedTrain by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * Fa lampeggiare la riga di ogni annuncio quando comincia a sentirsi (col jingle); gira
+     * finché non viene cancellata.
+     */
+    suspend fun blinkAnnouncedRows() {
+        val announcer = announcer ?: return
+        try {
+            announcer.started.collectLatest { announcement ->
+                announcedTrain = announcement.train.number
+                delay(announceBlink)
+                announcedTrain = null
+            }
+        } finally {
+            announcedTrain = null
+        }
+    }
+
+    /** [departures] con la riga del treno annunciato ([announcedTrain]) che lampeggia. */
+    val boardDepartures: List<Departure>
+        get() = announcedTrain?.let { number ->
+            departures.map { if (it.number == number) it.copy(blink = true) else it }
+        } ?: departures
 
     /** Se il tabellone ha un motore per il suono delle palette. */
     val canFlapSound get() = flapClatter != null
@@ -364,6 +405,10 @@ class LiveBoardState(
         if (Setting.FlapVolume !in changedBeforeRestore) applyFlapVolume(saved.flapVolume)
         if (Setting.FlapPagePause !in changedBeforeRestore) {
             flapPagePauseState = saved.flapPageSeconds.seconds.nearestOf(FLAP_PAGE_PAUSE_OPTIONS)
+        }
+        if (Setting.AnnounceBlink !in changedBeforeRestore) {
+            announceBlinkState =
+                saved.announceBlinkSeconds.seconds.nearestOf(ANNOUNCE_BLINK_OPTIONS)
         }
         // Per gli intervalli vince, fornitore per fornitore, quello scelto prima del ripristino.
         val refresh = saved.refreshSeconds.toIntervals(REFRESH_OPTIONS).filterKeys { it in sources }
@@ -399,6 +444,7 @@ class LiveBoardState(
                 flapSound = flapSound,
                 flapVolume = flapVolume,
                 flapPageSeconds = flapPagePause.inWholeSeconds.toInt(),
+                announceBlinkSeconds = announceBlink.inWholeSeconds.toInt(),
             )
         )
     }
@@ -533,6 +579,12 @@ class LiveBoardState(
     }
 
     companion object {
+        /** Lampeggio della riga del treno annunciato se non se ne è scelto un altro. */
+        val DEFAULT_ANNOUNCE_BLINK = 4.seconds
+
+        /** Durate del lampeggio della riga del treno annunciato tra cui scegliere. */
+        val ANNOUNCE_BLINK_OPTIONS = (4..15).map { it.seconds }
+
         /** Pausa oltre la quale gli annunci ripartono da una nuova base. */
         val STALE_PAUSE = 1.minutes
 
@@ -583,6 +635,7 @@ private fun Map<StationSource, Duration>.inSeconds(): Map<StationSource, Int> =
 fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = null) {
     LaunchedEffect(Unit) { state.restoreSettings() }
     LaunchedEffect(state) { state.duckFlapsDuringAnnouncements() }
+    LaunchedEffect(state) { state.blinkAnnouncedRows() }
     LaunchedEffect(state.source, state.restored) {
         if (state.restored && state.stations(state.source).isEmpty()) state.loadStations()
     }
@@ -625,7 +678,7 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
     ) {
         CompositionLocalProvider(LocalFlapClatter provides clatter) {
             DepartureBoard(
-                departures = state.departures,
+                departures = state.boardDepartures,
                 footer = boardFooter(now, state.notices, state.station.name),
                 labels = if (state.mode == BoardMode.Arrivals) BoardLabels.Arrivals else BoardLabels(),
                 layout = BoardLayout(
@@ -745,6 +798,15 @@ private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDism
                 SwitchRow("Scorrimento automatico", state.autoScroll) { state.autoScroll = it }
                 if (state.canAnnounce) {
                     SwitchRow("Annunci sonori", state.announce) { state.announce = it }
+                    if (state.announce && state.boardStyle == BoardStyle.Led) {
+                        IntervalSlider(
+                            label = "Lampeggio del treno annunciato",
+                            value = state.announceBlink,
+                            options = LiveBoardState.ANNOUNCE_BLINK_OPTIONS,
+                            onChange = { state.announceBlink = it },
+                            hint = "Da quando comincia il jingle",
+                        )
+                    }
                 }
                 Text("Aspetto", style = MaterialTheme.typography.titleSmall)
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
