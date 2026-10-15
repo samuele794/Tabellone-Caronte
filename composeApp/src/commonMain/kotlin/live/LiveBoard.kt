@@ -74,9 +74,11 @@ import departureboard.DepartureBoard
 import departureboard.FlapClatter
 import departureboard.LocalFlapClatter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
@@ -429,10 +431,24 @@ class LiveBoardState(
     var nextRefreshAt by mutableStateOf<TimeSource.Monotonic.ValueTimeMark?>(null)
         private set
 
-    /** Attende [after] prima del prossimo aggiornamento, rendendolo visibile in [nextRefreshAt]. */
+    /** Aggiornamenti chiesti a mano, in attesa che [waitForRefresh] li raccolga. */
+    private val refreshRequests = Channel<Unit>(Channel.CONFLATED)
+
+    /** Si può chiedere un aggiornamento a mano: impostazioni ripristinate e nessun download in corso. */
+    val canRefreshNow get() = restored && !loading
+
+    /** Aggiorna subito: [waitForRefresh] smette di attendere e il conto alla rovescia riparte. */
+    fun requestRefresh() {
+        if (canRefreshNow) refreshRequests.trySend(Unit)
+    }
+
+    /**
+     * Attende [after] prima del prossimo aggiornamento, rendendolo visibile in [nextRefreshAt];
+     * finisce prima se nel frattempo arriva [requestRefresh].
+     */
     suspend fun waitForRefresh(after: Duration) {
         nextRefreshAt = TimeSource.Monotonic.markNow() + after
-        delay(after)
+        withTimeoutOrNull(after) { refreshRequests.receive() }
     }
 
     /**
@@ -484,6 +500,8 @@ class LiveBoardState(
             announcer?.clear()
         }
         loading = true
+        // Una richiesta arrivata mentre l'attesa era già finita la soddisfa questo aggiornamento.
+        refreshRequests.tryReceive()
         var cancelled = false
         try {
             val board = client.board(station, key.third)
@@ -629,6 +647,8 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
                     listSecondsLeft = secondsToRefresh(state.nextListRefreshAt),
                 ),
                 onSettingsClick = { showSettings = true },
+                onRefreshClick = state::requestRefresh,
+                refreshEnabled = state.canRefreshNow,
                 modifier = Modifier.fillMaxSize(),
             )
         }

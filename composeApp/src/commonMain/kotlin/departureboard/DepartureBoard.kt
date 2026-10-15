@@ -33,10 +33,12 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -250,7 +252,8 @@ private class BoardGeometry(l: BoardLayout) {
  * l'altezza disponibile e mostra quante righe ci stanno.
  *
  * [status] è una scritta sulla destra della riga del titolo (es. l'ora dell'ultimo
- * aggiornamento); con [onSettingsClick] accanto compare una rotella delle impostazioni.
+ * aggiornamento); con [onSettingsClick] accanto compare una rotella delle impostazioni e con
+ * [onRefreshClick] un bottone per aggiornare subito, spento finché [refreshEnabled] è falso.
  *
  * [style] sceglie come si scrive il testo: LED a matrice di punti o palette Solari, a parità di
  * colonne e misure.
@@ -266,6 +269,8 @@ fun DepartureBoard(
     style: BoardStyle = BoardStyle.Led,
     status: String? = null,
     onSettingsClick: (() -> Unit)? = null,
+    onRefreshClick: (() -> Unit)? = null,
+    refreshEnabled: Boolean = true,
 ) {
     val g = remember(layout) { BoardGeometry(layout) }
     val glyphs = rememberFlapGlyphs()
@@ -286,7 +291,8 @@ fun DepartureBoard(
             LocalFlapGlyphs provides glyphs,
         ) {
             BoardPanel(
-                departures, footer, labels, layout, g, pitch, colors, status, onSettingsClick,
+                departures, footer, labels, layout, g, pitch, colors, status,
+                TitleActions(onSettingsClick, onRefreshClick, refreshEnabled),
                 modifier = if (fill) Modifier.height(maxHeight) else Modifier,
             )
         }
@@ -303,7 +309,7 @@ private fun BoardPanel(
     p: Dp,
     colors: BoardColors,
     status: String?,
-    onSettingsClick: (() -> Unit)?,
+    actions: TitleActions,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -314,7 +320,7 @@ private fun BoardPanel(
             .padding(p * U.PAD)
             .width(p * g.content),
     ) {
-        TitleRow(labels.title, status, onSettingsClick, p, colors)
+        TitleRow(labels.title, status, actions, p, colors)
         Spacer(Modifier.height(p * 3))
         Rule(colors)
         Spacer(Modifier.height(p * 4))
@@ -410,11 +416,18 @@ private fun rowMetrics(p: Dp): RowMetrics = with(LocalDensity.current) {
     RowMetrics((p * U.CELL_H).roundToPx(), (p * U.ROW_GAP).roundToPx())
 }
 
+/** Bottoni a destra della riga del titolo; quelli null non compaiono. */
+private class TitleActions(
+    val onSettingsClick: (() -> Unit)?,
+    val onRefreshClick: (() -> Unit)?,
+    val refreshEnabled: Boolean,
+)
+
 @Composable
 private fun TitleRow(
     title: BoardLabel,
     status: String?,
-    onSettingsClick: (() -> Unit)?,
+    actions: TitleActions,
     p: Dp,
     colors: BoardColors,
 ) {
@@ -439,10 +452,88 @@ private fun TitleRow(
                 maxLines = 1,
             )
         }
-        if (onSettingsClick != null) {
+        actions.onRefreshClick?.let { onClick ->
             Spacer(Modifier.width(p * 4))
-            SettingsGear(onSettingsClick, p, colors, Modifier.align(Alignment.CenterVertically))
+            RefreshButton(
+                onClick,
+                actions.refreshEnabled,
+                p,
+                colors,
+                Modifier.align(Alignment.CenterVertically)
+            )
         }
+        actions.onSettingsClick?.let { onClick ->
+            Spacer(Modifier.width(p * if (actions.onRefreshClick != null) 1 else 4))
+            SettingsGear(onClick, p, colors, Modifier.align(Alignment.CenterVertically))
+        }
+    }
+}
+
+/**
+ * Freccia circolare per aggiornare subito, col colore delle etichette; spenta ([enabled] falso)
+ * è sbiadita e non si preme.
+ */
+@Composable
+private fun RefreshButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    p: Dp,
+    colors: BoardColors,
+    modifier: Modifier = Modifier
+) {
+    val tint = if (enabled) colors.label else colors.label.copy(alpha = DISABLED_ALPHA)
+    Box(
+        modifier
+            .clip(CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .then(if (enabled) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier)
+            .semantics { contentDescription = "Aggiorna" }
+            .padding(p * 1.5f),
+    ) {
+        Spacer(
+            Modifier.size(p * 8).drawWithCache {
+                val r = size.minDimension / 2
+                val stroke = r * 0.26f
+                // Raggio dell'arco: lascia spazio alla punta della freccia, più larga del tratto.
+                val arc = r - stroke * 1.1f
+                val head = refreshHeadPath(r, arc, stroke)
+                onDrawBehind {
+                    drawArc(
+                        tint,
+                        startAngle = REFRESH_START,
+                        sweepAngle = REFRESH_SWEEP,
+                        useCenter = false,
+                        topLeft = Offset(r - arc, r - arc),
+                        size = Size(arc * 2, arc * 2),
+                        style = Stroke(stroke),
+                    )
+                    drawPath(head, tint)
+                }
+            },
+        )
+    }
+}
+
+/** Arco della freccia di aggiornamento, in gradi in senso orario: lascia un varco in alto a destra. */
+private const val REFRESH_START = -30f
+private const val REFRESH_SWEEP = 280f
+
+/** Opacità di un bottone spento. */
+private const val DISABLED_ALPHA = 0.3f
+
+/** Punta triangolare in fondo all'arco di raggio [arc] centrato in (r, r), rivolta in senso orario. */
+private fun refreshHeadPath(r: Float, arc: Float, stroke: Float): Path {
+    val a = (REFRESH_START + REFRESH_SWEEP) * PI / 180
+    val radial = Offset(cos(a).toFloat(), sin(a).toFloat())
+    val tangent = Offset(-radial.y, radial.x)
+    val end = Offset(r, r) + radial * arc
+    return Path().apply {
+        val base = radial * (stroke * 1.1f)
+        moveTo((end + base).x, (end + base).y)
+        lineTo((end - base).x, (end - base).y)
+        val tip = end + tangent * (stroke * 1.4f)
+        lineTo(tip.x, tip.y)
+        close()
     }
 }
 
