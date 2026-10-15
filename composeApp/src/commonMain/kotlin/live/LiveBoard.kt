@@ -35,6 +35,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -67,8 +68,11 @@ import departureboard.BoardColors
 import departureboard.BoardFooter
 import departureboard.BoardLabels
 import departureboard.BoardLayout
+import departureboard.BoardStyle
 import departureboard.Departure
 import departureboard.DepartureBoard
+import departureboard.FlapClatter
+import departureboard.LocalFlapClatter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -82,10 +86,13 @@ import kotlinx.datetime.format.MonthNames
 import kotlinx.datetime.format.char
 import kotlinx.datetime.toLocalDateTime
 import live.LiveBoardState.Companion.DEFAULT_REFRESH
+import live.LiveBoardState.Companion.FLAP_PAGE_PAUSE_OPTIONS
+import live.LiveBoardState.Companion.FLAP_VOLUME_OPTIONS
 import live.LiveBoardState.Companion.STALE_PAUSE
 import rfi.BoardMode
 import rfi.RfiMapper
 import rfi.Station
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.time.Clock
@@ -100,7 +107,7 @@ import kotlin.time.TimeSource
  * Con un [announcer] le variazioni tra un aggiornamento e il successivo vengono annunciate a voce;
  * con una [stationCache] gli elenchi stazioni si scaricano al più una volta al mese; con un
  * [settingsStore] stazione, scorrimento, annunci e intervalli di aggiornamento si ritrovano alla
- * riapertura dell'app.
+ * riapertura dell'app. Con un [flapClatter] il tabellone a palette crepita quando gira.
  */
 @Stable
 class LiveBoardState(
@@ -110,6 +117,8 @@ class LiveBoardState(
     private val announcer: Announcer? = null,
     private val stationCache: StationCache? = null,
     private val settingsStore: SettingsStore? = null,
+    /** Suono delle palette; null = la piattaforma non lo riproduce. */
+    val flapClatter: FlapClatter? = null,
 ) {
     private val mapper = RfiMapper()
     private val announcements = BoardAnnouncements()
@@ -135,6 +144,10 @@ class LiveBoardState(
     private var ecoModeState by mutableStateOf(false)
     private var screenOnOnlyWhenChargingState by mutableStateOf(false)
     private var oledPaletteState by mutableStateOf(false)
+    private var boardStyleState by mutableStateOf(BoardStyle.Led)
+    private var flapSoundState by mutableStateOf(true)
+    private var flapVolumeState by mutableIntStateOf(DEFAULT_FLAP_VOLUME)
+    private var flapPagePauseState by mutableStateOf(DEFAULT_FLAP_PAGE_PAUSE)
 
     /**
      * Se le impostazioni salvate sono già state ripristinate (o non c'è niente da ripristinare):
@@ -148,6 +161,7 @@ class LiveBoardState(
 
     private enum class Setting {
         Selection, AutoScroll, Announce, Refresh, ListRefresh, EcoMode, ScreenOnOnlyWhenCharging, OledPalette,
+        BoardStyle, FlapSound, FlapVolume, FlapPagePause,
     }
 
     /** Intervalli di aggiornamento scelti, per fornitore; chi manca usa [DEFAULT_REFRESH]. */
@@ -267,6 +281,66 @@ class LiveBoardState(
             changed(Setting.OledPalette)
         }
 
+    /** Aspetto del tabellone: LED o palette. */
+    var boardStyle: BoardStyle
+        get() = boardStyleState
+        set(value) {
+            boardStyleState = value
+            changed(Setting.BoardStyle)
+        }
+
+    /** Crepitio delle palette quando girano (solo con [boardStyle] a palette). */
+    var flapSound: Boolean
+        get() = flapSoundState
+        set(value) {
+            flapSoundState = value
+            changed(Setting.FlapSound)
+        }
+
+    /**
+     * Volume del crepitio delle palette, in percentuale; agganciato all'opzione più vicina di
+     * [FLAP_VOLUME_OPTIONS].
+     */
+    var flapVolume: Int
+        get() = flapVolumeState
+        set(value) {
+            applyFlapVolume(value)
+            changed(Setting.FlapVolume)
+        }
+
+    private fun applyFlapVolume(percent: Int) {
+        flapVolumeState = FLAP_VOLUME_OPTIONS.minBy { abs(it - percent) }
+        flapClatter?.volume = flapVolumeState / 100f
+    }
+
+    /**
+     * Pausa su ogni pagina di un testo lungo nel tabellone a palette, contata dalla fine della
+     * girata; agganciata all'opzione più vicina di [FLAP_PAGE_PAUSE_OPTIONS].
+     */
+    var flapPagePause: Duration
+        get() = flapPagePauseState
+        set(value) {
+            flapPagePauseState = value.nearestOf(FLAP_PAGE_PAUSE_OPTIONS)
+            changed(Setting.FlapPagePause)
+        }
+
+    /**
+     * Abbassa il crepitio delle palette mentre si diffonde un annuncio
+     * ([FlapClatter.DUCKED_VOLUME]); gira finché non viene cancellata.
+     */
+    suspend fun duckFlapsDuringAnnouncements() {
+        val clatter = flapClatter ?: return
+        val announcer = announcer ?: return
+        try {
+            announcer.speaking.collect { clatter.ducked = it }
+        } finally {
+            clatter.ducked = false
+        }
+    }
+
+    /** Se il tabellone ha un motore per il suono delle palette. */
+    val canFlapSound get() = flapClatter != null
+
     /** Riporta le impostazioni a quelle salvate; dalla seconda volta non fa nulla. */
     suspend fun restoreSettings() {
         if (restored) return
@@ -283,6 +357,12 @@ class LiveBoardState(
             screenOnOnlyWhenChargingState = saved.screenOnOnlyWhenCharging
         }
         if (Setting.OledPalette !in changedBeforeRestore) oledPaletteState = saved.oledPalette
+        if (Setting.BoardStyle !in changedBeforeRestore) boardStyleState = saved.boardStyle
+        if (Setting.FlapSound !in changedBeforeRestore) flapSoundState = saved.flapSound
+        if (Setting.FlapVolume !in changedBeforeRestore) applyFlapVolume(saved.flapVolume)
+        if (Setting.FlapPagePause !in changedBeforeRestore) {
+            flapPagePauseState = saved.flapPageSeconds.seconds.nearestOf(FLAP_PAGE_PAUSE_OPTIONS)
+        }
         // Per gli intervalli vince, fornitore per fornitore, quello scelto prima del ripristino.
         val refresh = saved.refreshSeconds.toIntervals(REFRESH_OPTIONS).filterKeys { it in sources }
         refreshIntervals =
@@ -313,6 +393,10 @@ class LiveBoardState(
                 ecoMode = ecoMode,
                 screenOnOnlyWhenCharging = screenOnOnlyWhenCharging,
                 oledPalette = oledPalette,
+                boardStyle = boardStyle,
+                flapSound = flapSound,
+                flapVolume = flapVolume,
+                flapPageSeconds = flapPagePause.inWholeSeconds.toInt(),
             )
         )
     }
@@ -445,12 +529,27 @@ class LiveBoardState(
 
         /** Intervalli di riscaricamento dell'elenco treni tra cui scegliere. */
         val LIST_REFRESH_OPTIONS = listOf(1, 2, 3, 5, 10, 15, 30).map { it.minutes }
+
+        /** Volume delle palette se non se ne è scelto un altro, in percentuale. */
+        const val DEFAULT_FLAP_VOLUME = 100
+
+        /** Volumi delle palette tra cui scegliere, in percentuale. */
+        val FLAP_VOLUME_OPTIONS = (10..100 step 10).toList()
+
+        /** Pausa sulle pagine dei testi lunghi se non se ne è scelta un'altra. */
+        val DEFAULT_FLAP_PAGE_PAUSE = 5.seconds
+
+        /** Pause sulle pagine dei testi lunghi tra cui scegliere. */
+        val FLAP_PAGE_PAUSE_OPTIONS = listOf(2, 3, 4, 5, 6, 8, 10, 15, 20, 30).map { it.seconds }
     }
 }
 
 /** Secondi salvati agganciati all'opzione più vicina, anche se il file è stato scritto a mano. */
 private fun Map<StationSource, Int>.toIntervals(options: List<Duration>): Map<StationSource, Duration> =
-    mapValues { (_, seconds) -> options.minBy { (it - seconds.seconds).absoluteValue } }
+    mapValues { (_, seconds) -> seconds.seconds.nearestOf(options) }
+
+private fun Duration.nearestOf(options: List<Duration>): Duration =
+    options.minBy { (it - this).absoluteValue }
 
 private fun Map<StationSource, Duration>.inSeconds(): Map<StationSource, Int> =
     mapValues { it.value.inWholeSeconds.toInt() }
@@ -465,6 +564,7 @@ private fun Map<StationSource, Duration>.inSeconds(): Map<StationSource, Int> =
 @Composable
 fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = null) {
     LaunchedEffect(Unit) { state.restoreSettings() }
+    LaunchedEffect(state) { state.duckFlapsDuringAnnouncements() }
     LaunchedEffect(state.source, state.restored) {
         if (state.restored && state.stations(state.source).isEmpty()) state.loadStations()
     }
@@ -499,32 +599,39 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
         if (state.oledPalette) BoardColors.Oled else BoardColors()
     }
     val screenOn = !state.screenOnOnlyWhenCharging || charging != false
+    val clatter =
+        state.flapClatter.takeIf { state.boardStyle == BoardStyle.SplitFlap && state.flapSound }
     Box(
         Modifier.fillMaxSize().background(colors.frame).safeDrawingPadding()
             .then(if (screenOn) Modifier.keepScreenOn() else Modifier)
     ) {
-        DepartureBoard(
-            departures = state.departures,
-            footer = boardFooter(now, state.notices, state.station.name),
-            labels = if (state.mode == BoardMode.Arrivals) BoardLabels.Arrivals else BoardLabels(),
-            layout = BoardLayout(
-                rows = null,
-                autoScroll = state.autoScroll,
-                logoCols = RfiMapper.LOGO_COLS,
-                logoDensity = RfiMapper.LOGO_DENSITY,
-                ledStepMillis = if (state.ecoMode) ECO_LED_STEP_MILLIS else 100,
-                marqueeColsPerSecond = if (state.ecoMode) ECO_MARQUEE_COLS_PER_SECOND else 10f,
-                blinkingColon = !state.ecoMode,
-            ),
-            colors = colors,
-            status = statusLabel(
-                state,
-                secondsLeft = secondsToRefresh(state.nextRefreshAt),
-                listSecondsLeft = secondsToRefresh(state.nextListRefreshAt),
-            ),
-            onSettingsClick = { showSettings = true },
-            modifier = Modifier.fillMaxSize(),
-        )
+        CompositionLocalProvider(LocalFlapClatter provides clatter) {
+            DepartureBoard(
+                departures = state.departures,
+                footer = boardFooter(now, state.notices, state.station.name),
+                labels = if (state.mode == BoardMode.Arrivals) BoardLabels.Arrivals else BoardLabels(),
+                layout = BoardLayout(
+                    rows = null,
+                    autoScroll = state.autoScroll,
+                    logoCols = RfiMapper.LOGO_COLS,
+                    logoDensity = RfiMapper.LOGO_DENSITY,
+                    ledStepMillis = if (state.ecoMode) ECO_LED_STEP_MILLIS else 100,
+                    marqueeColsPerSecond = if (state.ecoMode) ECO_MARQUEE_COLS_PER_SECOND else 10f,
+                    blinkingColon = !state.ecoMode,
+                    flapPageMillis = state.flapPagePause.inWholeMilliseconds *
+                            if (state.ecoMode) ECO_FLAP_PAGE_FACTOR else 1,
+                ),
+                colors = colors,
+                style = state.boardStyle,
+                status = statusLabel(
+                    state,
+                    secondsLeft = secondsToRefresh(state.nextRefreshAt),
+                    listSecondsLeft = secondsToRefresh(state.nextListRefreshAt),
+                ),
+                onSettingsClick = { showSettings = true },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 
     if (showSettings) {
@@ -538,6 +645,9 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
 /** Modalità risparmio: 5 scatti al secondo invece di 10, una colonna di marquee per scatto. */
 private const val ECO_LED_STEP_MILLIS = 200L
 private const val ECO_MARQUEE_COLS_PER_SECOND = 5f
+
+/** Modalità risparmio, tabellone a palette: le pagine dei testi lunghi girano la metà delle volte. */
+private const val ECO_FLAP_PAGE_FACTOR = 2
 
 /**
  * Scritta accanto alla rotella: ora dell'ultimo aggiornamento, o perché manca, e quanto manca
@@ -615,6 +725,42 @@ private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDism
                 SwitchRow("Scorrimento automatico", state.autoScroll) { state.autoScroll = it }
                 if (state.canAnnounce) {
                     SwitchRow("Annunci sonori", state.announce) { state.announce = it }
+                }
+                Text("Aspetto", style = MaterialTheme.typography.titleSmall)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    BoardStyle.entries.forEachIndexed { i, style ->
+                        SegmentedButton(
+                            selected = state.boardStyle == style,
+                            onClick = { state.boardStyle = style },
+                            shape = SegmentedButtonDefaults.itemShape(i, BoardStyle.entries.size),
+                        ) { Text(if (style == BoardStyle.Led) "LED" else "Palette") }
+                    }
+                }
+                if (state.boardStyle == BoardStyle.SplitFlap && state.canFlapSound) {
+                    SwitchRow("Suono delle palette", state.flapSound) { state.flapSound = it }
+                    if (state.flapSound) {
+                        VolumeSlider(
+                            label = "Volume delle palette",
+                            value = state.flapVolume,
+                            options = LiveBoardState.FLAP_VOLUME_OPTIONS,
+                            onChange = {
+                                state.flapVolume = it
+                                state.flapClatter?.preview()
+                            },
+                            hint = if (state.canAnnounce && state.announce) {
+                                "Scende al ${(FlapClatter.DUCKED_VOLUME * 100).roundToInt()}% durante gli annunci"
+                            } else null,
+                        )
+                    }
+                }
+                if (state.boardStyle == BoardStyle.SplitFlap) {
+                    IntervalSlider(
+                        label = "Pausa tra le pagine",
+                        value = state.flapPagePause,
+                        options = LiveBoardState.FLAP_PAGE_PAUSE_OPTIONS,
+                        onChange = { state.flapPagePause = it },
+                        hint = "Dalla fine della girata; doppia in modalità risparmio",
+                    )
                 }
                 Text("Risparmio energetico", style = MaterialTheme.typography.titleSmall)
                 SwitchRow("Modalità risparmio", state.ecoMode) { state.ecoMode = it }
@@ -715,6 +861,39 @@ private fun IntervalSlider(
         Slider(
             value = index.toFloat(),
             onValueChange = { index = it.roundToInt().coerceIn(allowed) },
+            valueRange = 0f..options.lastIndex.toFloat(),
+            steps = options.size - 2,
+            onValueChangeFinished = { if (options[index] != value) onChange(options[index]) },
+        )
+    }
+}
+
+/**
+ * Cursore a scatti tra i volumi [options] (percentuali). Come [IntervalSlider], il valore arriva
+ * a [onChange] solo al rilascio: un'anteprima a ogni scatto si accavallerebbe.
+ */
+@Composable
+private fun VolumeSlider(
+    label: String,
+    value: Int,
+    options: List<Int>,
+    onChange: (Int) -> Unit,
+    hint: String? = null,
+) {
+    var index by remember(value, options) {
+        mutableIntStateOf(
+            options.indexOf(value).coerceAtLeast(0)
+        )
+    }
+    Column {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text("${options[index]}%", style = MaterialTheme.typography.bodyLarge)
+        }
+        hint?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        Slider(
+            value = index.toFloat(),
+            onValueChange = { index = it.roundToInt().coerceIn(options.indices) },
             valueRange = 0f..options.lastIndex.toFloat(),
             steps = options.size - 2,
             onValueChangeFinished = { if (options[index] != value) onChange(options[index]) },

@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import announce.Announcer
 import cache.StationCache
 import debuglog.DebugLog
+import departureboard.FlapClatter
 import fnm.FnmBoardSource
 import fnm.FnmClient
 import fnm.FnmKeyStore
@@ -13,6 +14,7 @@ import live.LiveBoardState
 import live.SettingsStore
 import rfi.RfiBoardSource
 import rfi.RfiClient
+import tts.AndroidPcmPlayer
 import tts.AndroidSoundPlayer
 import tts.AndroidSpeechEngine
 import java.io.File
@@ -43,16 +45,19 @@ class BoardViewModel(app: Application) : AndroidViewModel(app) {
         ),
     ).associateBy { it.source }
     private val announcer = Announcer(AndroidSpeechEngine(app), AndroidSoundPlayer(app))
+    private val flapClatter = FlapClatter(AndroidPcmPlayer())
 
     val state = LiveBoardState(
         sources,
         announcer = announcer,
         stationCache = stationCache,
         settingsStore = settingsStore,
+        flapClatter = flapClatter,
     )
 
     override fun onCleared() {
         announcer.close()
+        flapClatter.close()
         stationCache.close()
         settingsStore.close()
         sources.values.forEach { it.close() }

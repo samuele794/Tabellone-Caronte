@@ -7,6 +7,7 @@ import cache.blockingClose
 import cache.ioDispatcher
 import cache.jsonDataStore
 import debuglog.DebugLog
+import departureboard.BoardStyle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
@@ -47,6 +48,14 @@ data class BoardSettings(
     val screenOnOnlyWhenCharging: Boolean = false,
     /** Fondo e moduli neri, per gli schermi OLED. */
     val oledPalette: Boolean = false,
+    /** LED o palette. */
+    val boardStyle: BoardStyle = BoardStyle.Led,
+    /** Crepitio delle palette quando girano. */
+    val flapSound: Boolean = true,
+    /** Volume del crepitio delle palette, in percentuale. */
+    val flapVolume: Int = 100,
+    /** Secondi di pausa su ogni pagina di un testo lungo, dalla fine della girata. */
+    val flapPageSeconds: Int = 5,
 )
 
 /**

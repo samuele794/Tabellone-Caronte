@@ -18,6 +18,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.ComposeViewport
 import announce.Announcer
 import cache.StationCache
+import departureboard.BoardStyle
+import departureboard.FlapClatter
 import fnm.FnmBoardSource
 import fnm.FnmClient
 import fnm.FnmKeyStore
@@ -30,8 +32,10 @@ import live.rememberNow
 import rfi.BoardMode
 import rfi.RfiBoardSource
 import rfi.RfiClient
+import tts.WebPcmPlayer
 import tts.WebSoundPlayer
 import tts.WebSpeechEngine
+import tts.unlockAudio
 import tts.unlockSpeech
 
 /** Fusi orari per kotlinx-datetime: nel browser vanno caricati a parte. */
@@ -56,6 +60,7 @@ fun main() {
         ),
     ).associateBy { it.source }
     val announcer = Announcer(WebSpeechEngine(), WebSoundPlayer())
+    val flapClatter = FlapClatter(WebPcmPlayer())
 
     ComposeViewport(document.body!!) {
         val state = remember {
@@ -64,6 +69,7 @@ fun main() {
                 announcer = announcer,
                 stationCache = stationCache,
                 settingsStore = settingsStore,
+                flapClatter = flapClatter,
             )
         }
         LaunchedEffect(state.mode, state.station) {
@@ -74,16 +80,18 @@ fun main() {
         LaunchedEffect(Unit) {
             onFirstGesture {
                 unlockSpeech()
+                unlockAudio()
                 audioUnlocked = true
             }
         }
         MaterialTheme {
             Box {
                 LiveBoard(state, now = rememberNow())
-                if (state.announce && !audioUnlocked) {
-                    // Senza un gesto dell'utente il browser blocca jingle e voce.
+                val flapSound = state.boardStyle == BoardStyle.SplitFlap && state.flapSound
+                if ((state.announce || flapSound) && !audioUnlocked) {
+                    // Senza un gesto dell'utente il browser blocca jingle, voce e palette.
                     Text(
-                        "Tocca il tabellone per attivare gli annunci audio",
+                        "Tocca il tabellone per attivare l'audio",
                         color = Color.White,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()

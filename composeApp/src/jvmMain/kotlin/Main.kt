@@ -23,9 +23,14 @@ import announce.Announcer
 import cache.StationCache
 import departureboard.BoardLabels
 import departureboard.BoardLayout
+import departureboard.BoardStyle
 import departureboard.DepartureBoard
+import departureboard.FlapClatter
+import departureboard.FlapClicks
 import departureboard.LocalLedTicker
 import departureboard.SampleDepartures
+import departureboard.mixClatter
+import departureboard.resources.Res
 import fnm.FnmBoardSource
 import fnm.FnmClient
 import fnm.FnmKeyStore
@@ -40,28 +45,34 @@ import rfi.RfiBoardSource
 import rfi.RfiClient
 import rfi.RfiTrain
 import tts.DesktopSpeechEngine
+import tts.JvmPcmPlayer
 import tts.JvmSoundPlayer
 import java.io.File
 
 //https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor?placeId=1728&arrivals=False
 
 fun main(args: Array<String>) {
-    // ./gradlew run --args="--snapshot board.png [secondi] [de]"
+    // ./gradlew run --args="--snapshot board.png [secondi] [de] [flap]"
     if (args.firstOrNull() == "--snapshot") {
         val out = File(args.getOrElse(1) { "board.png" })
         val seconds = args.getOrNull(2)?.toDoubleOrNull() ?: 0.0
-        val german = args.getOrNull(3) == "de"
-        snapshot(out, seconds, german)
+        val german = "de" in args.drop(3)
+        snapshot(out, seconds, german, style(args))
         return
     }
-    // ./gradlew run --args="--bench [frame]"
+    // ./gradlew run --args="--bench [frame] [flap]"
     if (args.firstOrNull() == "--bench") {
-        bench(args.getOrNull(1)?.toIntOrNull() ?: 600)
+        bench(args.getOrNull(1)?.toIntOrNull() ?: 600, style(args))
         return
     }
     // ./gradlew run --args="--announce"
     if (args.firstOrNull() == "--announce") {
         announceDemo()
+        return
+    }
+    // ./gradlew run --args="--clatter [palette]"
+    if (args.firstOrNull() == "--clatter") {
+        clatterDemo(args.getOrNull(1)?.toIntOrNull() ?: 300)
         return
     }
     val dataDir = File(System.getProperty("user.home"), ".departure-board")
@@ -76,6 +87,7 @@ fun main(args: Array<String>) {
         ),
     ).associateBy { it.source }
     val announcer = Announcer(DesktopSpeechEngine(), JvmSoundPlayer())
+    val flapClatter = FlapClatter(JvmPcmPlayer())
     System.setProperty("skiko.fps.enabled", "true")
     application {
         val state =
@@ -85,11 +97,13 @@ fun main(args: Array<String>) {
                     announcer = announcer,
                     stationCache = stationCache,
                     settingsStore = settingsStore,
+                    flapClatter = flapClatter,
                 )
             }
         Window(
             onCloseRequest = {
                 announcer.close()
+                flapClatter.close()
                 stationCache.close()
                 settingsStore.close()
                 sources.values.forEach { it.close() }
@@ -105,29 +119,47 @@ fun main(args: Array<String>) {
     }
 }
 
-/** Tabellone con i dati di esempio, per gli snapshot deterministici. */
+/** "flap" tra gli argomenti di `--snapshot` e `--bench` = tabellone a palette. */
+private fun style(args: Array<String>) =
+    if ("flap" in args.drop(2)) BoardStyle.SplitFlap else BoardStyle.Led
+
+/** Snapshot a palette: il tabellone parte vuoto e si riempie girando a questo istante della scena. */
+private const val FLAP_FILL_MILLIS = 500L
+
+/**
+ * Tabellone con i dati di esempio, per gli snapshot deterministici. A palette parte vuoto e si
+ * riempie dopo [FLAP_FILL_MILLIS], così si vedono le palette girare.
+ */
 @Composable
-private fun Demo(german: Boolean = false) {
+private fun Demo(german: Boolean = false, style: BoardStyle = BoardStyle.Led) {
     val footer = SampleDepartures.footer
+    val ticker = LocalLedTicker.current
+    val filled = style == BoardStyle.Led || (ticker?.value ?: 0L) >= FLAP_FILL_MILLIS
 
     Box(
         Modifier.fillMaxSize().background(Color(0xFFD9D9D6)).padding(24.dp),
         contentAlignment = Alignment.Center,
     ) {
         DepartureBoard(
-            departures = SampleDepartures.rows,
+            departures = if (filled) SampleDepartures.rows else emptyList(),
             footer = footer,
             labels = if (german) BoardLabels.ItalianGerman else BoardLabels(),
+            style = style,
             modifier = Modifier.fillMaxWidth(),
         )
     }
 }
 
-private fun snapshot(out: File, seconds: Double, german: Boolean) {
+private fun snapshot(out: File, seconds: Double, german: Boolean, style: BoardStyle) {
     // Marquee e spie seguono il tempo della scena, non l'orologio reale.
     val ticker = mutableLongStateOf(0L)
     val scene = ImageComposeScene(width = 1600, height = 900, density = Density(1f)) {
-        CompositionLocalProvider(LocalLedTicker provides ticker) { Demo(german = german) }
+        CompositionLocalProvider(LocalLedTicker provides ticker) {
+            Demo(
+                german = german,
+                style = style
+            )
+        }
     }
     // Le animazioni infinite partono al primo frame: avanzo a passi di ~16 ms.
     val target = (seconds * 1_000_000_000).toLong()
@@ -144,16 +176,23 @@ private fun snapshot(out: File, seconds: Double, german: Boolean) {
     println("Saved ${out.absolutePath}")
 }
 
-/** Tempo di render per frame del tabellone a tutto schermo, con scorrimento verticale attivo. */
-private fun bench(frames: Int) {
+/**
+ * Tempo di render per frame del tabellone a tutto schermo, con scorrimento verticale attivo. A
+ * palette le partenze cambiano ogni 3 s, così si misurano anche le girate.
+ */
+private fun bench(frames: Int, style: BoardStyle) {
     val ticker = mutableLongStateOf(0L)
+    val rows = SampleDepartures.rows + SampleDepartures.rows + SampleDepartures.rows
+    val swapped = rows.reversed()
     val scene = ImageComposeScene(width = 1920 * 2, height = 1080 * 2, density = Density(2f)) {
         CompositionLocalProvider(LocalLedTicker provides ticker) {
             Box(Modifier.fillMaxSize().background(Color(0xFFD9D9D6)).padding(24.dp)) {
+                val swap = style == BoardStyle.SplitFlap && ticker.longValue / 3_000 % 2 == 1L
                 DepartureBoard(
-                    departures = SampleDepartures.rows + SampleDepartures.rows + SampleDepartures.rows,
+                    departures = if (swap) swapped else rows,
                     footer = SampleDepartures.footer,
                     layout = BoardLayout(rows = null, scrollPauseMillis = 0),
+                    style = style,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -193,6 +232,22 @@ private fun announceDemo() = runBlocking {
     val announcement = Announcement.Imminent(train, BoardMode.Departures)
     println(announcement.code + ": " + AnnouncementText.text(announcement))
     Announcer(DesktopSpeechEngine(), JvmSoundPlayer()).use { it.announce(announcement) }
+}
+
+/**
+ * Crepitio di [flaps] palette che girano insieme, ognuna di un numero casuale di giri, come quando
+ * cambia una riga intera ([flaps] = 60) o tutto il tabellone (1000 e oltre).
+ */
+private fun clatterDemo(flaps: Int) = runBlocking {
+    val random = kotlin.random.Random(1)
+    val events = buildList {
+        repeat(flaps) {
+            val start = random.nextInt(250)
+            repeat(1 + random.nextInt(30)) { k -> add(start + (k + 1) * 55) }
+        }
+    }.toIntArray()
+    val clicks = FlapClicks.fromWav(Res.readBytes(FlapClatter.CLICKS))
+    JvmPcmPlayer().use { it.play(mixClatter(events, clicks), clicks.sampleRate) }
 }
 
 /** Tempo della scena a scatti di 100 ms, come [departureboard.rememberLedTicker]. */

@@ -1,12 +1,23 @@
 package live
 
+import announce.Announcement
+import announce.Announcer
+import announce.train
 import cache.StationSource
+import departureboard.BoardStyle
+import departureboard.FlapClatter
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import rfi.BoardMode
 import rfi.RfiBoard
 import rfi.Station
+import tts.PcmPlayer
+import tts.SoundPlayer
+import tts.SpeechEngine
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.AfterTest
@@ -162,6 +173,146 @@ class SettingsStoreTest {
             assertTrue(state.oledPalette)
         }
     }
+
+    @Test
+    fun `aspetto e suono delle palette sopravvivono alla riapertura`() = runBlocking {
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            state.restoreSettings()
+            state.boardStyle = BoardStyle.SplitFlap
+            state.flapSound = false
+            store.awaitSaved(
+                BoardSettings(
+                    Selection(StationSource.Rfi, milano),
+                    boardStyle = BoardStyle.SplitFlap,
+                    flapSound = false,
+                )
+            )
+        }
+
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            assertEquals(BoardStyle.Led, state.boardStyle)
+            state.restoreSettings()
+            assertEquals(BoardStyle.SplitFlap, state.boardStyle)
+            assertFalse(state.flapSound)
+        }
+    }
+
+    @Test
+    fun `la pausa tra le pagine sopravvive alla riapertura`() = runBlocking {
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            state.restoreSettings()
+            state.flapPagePause = 10.seconds
+            store.awaitSaved(
+                BoardSettings(
+                    Selection(StationSource.Rfi, milano),
+                    flapPageSeconds = 10
+                )
+            )
+        }
+
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            assertEquals(LiveBoardState.DEFAULT_FLAP_PAGE_PAUSE, state.flapPagePause)
+            state.restoreSettings()
+            assertEquals(10.seconds, state.flapPagePause)
+        }
+    }
+
+    @Test
+    fun `il volume delle palette sopravvive alla riapertura e arriva al crepitio`() = runBlocking {
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            state.restoreSettings()
+            state.flapVolume = 40
+            store.awaitSaved(BoardSettings(Selection(StationSource.Rfi, milano), flapVolume = 40))
+        }
+
+        SettingsStore(path).use { store ->
+            FlapClatter(SilentPlayer, clicks = { ByteArray(0) }).use { clatter ->
+                val state = LiveBoardState(sources, settingsStore = store, flapClatter = clatter)
+                assertEquals(LiveBoardState.DEFAULT_FLAP_VOLUME, state.flapVolume)
+                assertEquals(1f, clatter.volume)
+                state.restoreSettings()
+                assertEquals(40, state.flapVolume)
+                assertEquals(0.4f, clatter.volume)
+            }
+        }
+    }
+
+    @Test
+    fun `un volume scritto a mano si aggancia all'opzione più vicina`() = runBlocking {
+        File(path).apply { parentFile.mkdirs() }.writeText("""{"flapVolume":137}""")
+
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            state.restoreSettings()
+            assertEquals(100, state.flapVolume)
+        }
+    }
+
+    @Test
+    fun `durante un annuncio le palette si abbassano`() = runBlocking {
+        val gate = CompletableDeferred<Unit>()
+        val speech = object : SpeechEngine {
+            override suspend fun speak(text: String) = gate.await()
+            override fun close() {}
+        }
+        val sound = object : SoundPlayer {
+            override suspend fun play(bytes: ByteArray) {}
+            override fun close() {}
+        }
+        Announcer(speech, sound, jingle = { ByteArray(0) }).use { announcer ->
+            FlapClatter(SilentPlayer, clicks = { ByteArray(0) }).use { clatter ->
+                val state = LiveBoardState(sources, announcer = announcer, flapClatter = clatter)
+                val duck = launch { state.duckFlapsDuringAnnouncements() }
+                announcer.enqueue(
+                    listOf(
+                        Announcement.Imminent(
+                            train(number = "84"),
+                            BoardMode.Departures
+                        )
+                    )
+                )
+                withTimeout(5_000) { clatter.gain.first { it < 1f } }
+                assertTrue(clatter.ducked)
+                gate.complete(Unit)
+                withTimeout(5_000) { clatter.gain.first { it == 1f } }
+                duck.cancel()
+            }
+        }
+    }
+
+    private object SilentPlayer : PcmPlayer {
+        override suspend fun play(samples: ShortArray, sampleRate: Int, gain: StateFlow<Float>) =
+            Unit
+
+        override fun close() = Unit
+    }
+
+    @Test
+    fun `una pausa scritta a mano si aggancia all'opzione più vicina`() = runBlocking {
+        File(path).apply { parentFile.mkdirs() }.writeText("""{"flapPageSeconds":7}""")
+
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            state.restoreSettings()
+            assertEquals(6.seconds, state.flapPagePause)
+        }
+    }
+
+    @Test
+    fun `un file senza l'aspetto apre il tabellone a LED con il suono delle palette acceso`() =
+        runBlocking {
+            File(path).apply { parentFile.mkdirs() }.writeText("""{"oledPalette":true}""")
+
+            val loaded = SettingsStore(path).use { it.load() }
+            assertEquals(BoardStyle.Led, loaded.boardStyle)
+            assertTrue(loaded.flapSound)
+            assertEquals(100, loaded.flapVolume)
+        }
 
     @Test
     fun `un cambio fatto prima del ripristino vince solo per quell'impostazione`() = runBlocking {

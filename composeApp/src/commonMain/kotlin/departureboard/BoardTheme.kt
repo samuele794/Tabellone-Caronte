@@ -53,6 +53,14 @@ data class BoardColors(
     val lampOff: Color = Color(0xFF3A3C42),
     /** Spie accese. */
     val lampOn: Color = Color(0xFFFFE7B8),
+    /** Palette (tabellone [BoardStyle.SplitFlap]): plastica antracite. */
+    val flap: Color = Color(0xFF232427),
+    /** Lettere stampate sulle palette. */
+    val flapText: Color = Color(0xFFF2F2EE),
+    /** Fessura della cerniera tra le due metà di una palette. */
+    val flapHinge: Color = Color(0xFF060607),
+    /** Alloggiamento delle palette, al posto del fondo dei moduli LED. */
+    val flapHousing: Color = Color(0xFF111215),
 ) {
     companion object {
         /**
@@ -65,6 +73,7 @@ data class BoardColors(
             module = Color.Black,
             ledOff = Color(0x0CFFA51F),
             lampOff = Color(0xFF1E1F23),
+            flapHousing = Color.Black,
         )
     }
 }

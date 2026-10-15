@@ -10,9 +10,11 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.PixelMap
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntRect
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -73,6 +75,38 @@ fun DotMatrixImage(
     )
 }
 
+/** Quanto [this] pixel conta come "pieno" (0..1) secondo [sampling]. */
+internal fun Color.ink(sampling: DotSampling): Float {
+    val lum = 0.2126f * red + 0.7152f * green + 0.0722f * blue
+    return when (sampling) {
+        DotSampling.Alpha -> alpha
+        DotSampling.Luminance -> lum * alpha
+        DotSampling.Darkness -> (1f - lum) * alpha
+    }
+}
+
+/**
+ * Riquadro del disegno, senza i margini vuoti: molti loghi (es. i GIF RFI) hanno ampi margini
+ * trasparenti che, ridotti a 7 righe, schiaccerebbero il marchio in una riga sola. null se
+ * l'immagine è vuota.
+ */
+internal fun inkBounds(pixels: PixelMap, sampling: DotSampling): IntRect? {
+    var left = pixels.width
+    var top = pixels.height
+    var right = -1
+    var bottom = -1
+    for (y in 0 until pixels.height) {
+        for (x in 0 until pixels.width) {
+            if (pixels[x, y].ink(sampling) >= 0.5f) {
+                left = min(left, x); right = max(right, x)
+                top = min(top, y); bottom = max(bottom, y)
+            }
+        }
+    }
+    if (right < 0) return null
+    return IntRect(left, top, right + 1, bottom + 1)
+}
+
 @Immutable
 private class DotGrid(val xs: IntArray, val ys: IntArray) {
     val size get() = xs.size
@@ -86,33 +120,13 @@ private fun dotify(
     threshold: Float,
 ): DotGrid {
     val pixels = bitmap.toPixelMap()
-    fun ink(x: Int, y: Int): Float {
-        val px = pixels[x, y]
-        val lum = 0.2126f * px.red + 0.7152f * px.green + 0.0722f * px.blue
-        return when (sampling) {
-            DotSampling.Alpha -> px.alpha
-            DotSampling.Luminance -> lum * px.alpha
-            DotSampling.Darkness -> (1f - lum) * px.alpha
-        }
-    }
+    fun ink(x: Int, y: Int): Float = pixels[x, y].ink(sampling)
 
-    // Riquadro del disegno: molti loghi (es. i GIF RFI) hanno ampi margini trasparenti che,
-    // ridotti a 7 righe, schiaccerebbero il marchio in una riga sola.
-    var left = pixels.width
-    var top = pixels.height
-    var right = -1
-    var bottom = -1
-    for (y in 0 until pixels.height) {
-        for (x in 0 until pixels.width) {
-            if (ink(x, y) >= 0.5f) {
-                left = min(left, x); right = max(right, x)
-                top = min(top, y); bottom = max(bottom, y)
-            }
-        }
-    }
-    if (right < 0) return DotGrid(IntArray(0), IntArray(0))
-    val w = right - left + 1
-    val h = bottom - top + 1
+    val bounds = inkBounds(pixels, sampling) ?: return DotGrid(IntArray(0), IntArray(0))
+    val left = bounds.left
+    val top = bounds.top
+    val w = bounds.width
+    val h = bounds.height
 
     // Dimensioni in punti mantenendo le proporzioni (i punti sono quadrati).
     val aspect = w.toFloat() / h

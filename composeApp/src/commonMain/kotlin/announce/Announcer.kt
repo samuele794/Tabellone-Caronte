@@ -10,6 +10,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import tts.SoundPlayer
 import tts.SpeechEngine
@@ -39,6 +44,12 @@ class Announcer(
 
     @Volatile
     private var current: Job? = null
+
+    /** Annunci in diffusione in questo momento (di solito 0 o 1). */
+    private val active = MutableStateFlow(0)
+
+    /** true mentre si diffonde un annuncio, jingle compreso. */
+    val speaking: Flow<Boolean> = active.map { it > 0 }.distinctUntilChanged()
 
     /** Località RFI per sciogliere le abbreviazioni nei testi; si aggiorna quando arriva l'elenco. */
     @Volatile
@@ -76,6 +87,7 @@ class Announcer(
     /** Diffonde subito [announcement], fuori dalla coda; ritorna a fine lettura. */
     suspend fun announce(announcement: Announcement) {
         val text = AnnouncementText.text(announcement, places)
+        active.update { it + 1 }
         try {
             DebugLog.d(TAG) { "Diffondo ${announcement.summary()}: $text" }
             jingleBytes.await()?.let { sound.play(it) }
@@ -86,6 +98,8 @@ class Announcer(
             throw e
         } catch (e: Exception) {
             onError(e)
+        } finally {
+            active.update { it - 1 }
         }
     }
 

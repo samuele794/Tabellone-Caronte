@@ -163,6 +163,11 @@ data class BoardLayout(
     val marqueeColsPerSecond: Float = 10f,
     /** I ":" dell'orologio lampeggiano; false = sempre accesi. */
     val blinkingColon: Boolean = true,
+    /**
+     * Tabellone a palette: quanto resta ferma ogni pagina di un testo più lungo della colonna,
+     * contando da quando la girata è finita.
+     */
+    val flapPageMillis: Long = 5_000,
 )
 
 /** Fascia inferiore: orologio, data e due righe di avvisi a scorrimento. */
@@ -193,6 +198,10 @@ private object U {
     const val LAMPS_W = 2 * LAMP + LAMP_GAP + 1f
     const val CLOCK_PITCH = 2.8f
     const val DATE_PITCH = 0.8f
+
+    /** Altezza delle palette di orologio e data, in punti del loro passo: entrano nella fascia. */
+    const val CLOCK_FLAP_H = 8.4f
+    const val DATE_FLAP_H = 8.8f
     const val CELL_H = DotMatrixFont.ROWS + 2 * CELL_PAD_Y
     const val ROW_STEP = CELL_H + ROW_GAP
     const val FOOTER_GAP = 6f
@@ -242,6 +251,9 @@ private class BoardGeometry(l: BoardLayout) {
  *
  * [status] è una scritta sulla destra della riga del titolo (es. l'ora dell'ultimo
  * aggiornamento); con [onSettingsClick] accanto compare una rotella delle impostazioni.
+ *
+ * [style] sceglie come si scrive il testo: LED a matrice di punti o palette Solari, a parità di
+ * colonne e misure.
  */
 @Composable
 fun DepartureBoard(
@@ -251,10 +263,12 @@ fun DepartureBoard(
     labels: BoardLabels = BoardLabels(),
     layout: BoardLayout = BoardLayout(),
     colors: BoardColors = BoardColors(),
+    style: BoardStyle = BoardStyle.Led,
     status: String? = null,
     onSettingsClick: (() -> Unit)? = null,
 ) {
     val g = remember(layout) { BoardGeometry(layout) }
+    val glyphs = rememberFlapGlyphs()
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
         val fill = layout.rows == null && constraints.hasBoundedHeight
         var pitch =
@@ -268,6 +282,8 @@ fun DepartureBoard(
             LocalDotPitch provides pitch,
             LocalBoardColors provides colors,
             LocalLedTicker provides ticker,
+            LocalBoardStyle provides style,
+            LocalFlapGlyphs provides glyphs,
         ) {
             BoardPanel(
                 departures, footer, labels, layout, g, pitch, colors, status, onSettingsClick,
@@ -521,61 +537,50 @@ private fun DepartureRow(d: Departure?, layout: BoardLayout, g: BoardGeometry, p
         horizontalArrangement = Arrangement.spacedBy(p * U.COL_GAP),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Prima colonna: logo LED + categoria e numero
+        // Prima colonna: logo + categoria e numero
         Module(g.train, p) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (d?.logo != null) {
-                    DotMatrixImage(
-                        d.logo,
-                        slotCols = layout.logoCols,
-                        sampling = d.logoSampling,
-                        threshold = d.logoThreshold,
-                        density = layout.logoDensity,
-                    )
-                } else {
-                    LedBlank(layout.logoCols, DotMatrixFont.ROWS)
-                }
+                BoardLogo(d, layout)
                 Spacer(Modifier.width(p * U.LOGO_GAP))
-                DotMatrixText(
+                BoardText(
                     d?.let { "${it.category.padEnd(2)} ${it.number}" }.orEmpty(),
                     chars = layout.trainChars,
+                    layout = layout,
                     marquee = Marquee.Off,
                 )
             }
         }
         Module(g.destination, p) {
-            DotMatrixText(
-                d?.destination.orEmpty(),
-                chars = layout.destinationChars,
-                scrollSpeed = layout.marqueeColsPerSecond,
-            )
+            BoardText(d?.destination.orEmpty(), chars = layout.destinationChars, layout = layout)
         }
         Module(g.time, p) {
-            DotMatrixText(d?.time.orEmpty(), chars = layout.timeChars, marquee = Marquee.Off)
+            BoardText(
+                d?.time.orEmpty(),
+                chars = layout.timeChars,
+                layout = layout,
+                marquee = Marquee.Off
+            )
         }
         Module(g.delay, p) {
             val text = d?.delayText.orEmpty()
             val delay =
                 text.ifEmpty { d?.delayMinutes?.takeIf { it > 0 }?.let { "$it'" }.orEmpty() }
-            DotMatrixText(
+            BoardText(
                 delay,
                 chars = layout.delayChars,
+                layout = layout,
                 align = DotAlign.End,
                 marquee = if (text.isEmpty()) Marquee.Off else Marquee.Auto,
-                scrollSpeed = layout.marqueeColsPerSecond,
             )
         }
         Module(g.info, p) {
-            DotMatrixText(
-                d?.info.orEmpty(),
-                chars = layout.infoChars,
-                scrollSpeed = layout.marqueeColsPerSecond,
-            )
+            BoardText(d?.info.orEmpty(), chars = layout.infoChars, layout = layout)
         }
         Module(g.platform, p) {
-            DotMatrixText(
+            BoardText(
                 d?.platform.orEmpty(),
                 chars = layout.platformChars,
+                layout = layout,
                 align = DotAlign.Center,
                 marquee = Marquee.Off,
             )
@@ -591,26 +596,38 @@ private fun BoardFooterRow(footer: BoardFooter, layout: BoardLayout, g: BoardGeo
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(verticalArrangement = Arrangement.spacedBy(p * 1.2f)) {
                     repeat(3) { i ->
-                        DotMatrixText(
+                        BoardText(
                             footer.date.getOrNull(i).orEmpty(),
                             chars = 3,
+                            layout = layout,
                             pitch = p * U.DATE_PITCH,
                             align = DotAlign.Center,
                             marquee = Marquee.Off,
+                            flapHeight = U.DATE_FLAP_H,
                         )
                     }
                 }
                 Spacer(Modifier.width(p * U.LOGO_GAP))
-                LedClock(footer.clock, blink = layout.blinkingColon, pitch = p * U.CLOCK_PITCH)
+                if (LocalBoardStyle.current == BoardStyle.SplitFlap) {
+                    // I ":" stanno su una palette che non gira mai: niente lampeggio.
+                    SplitFlapText(
+                        footer.clock,
+                        chars = 5,
+                        pitch = p * U.CLOCK_PITCH,
+                        heightDots = U.CLOCK_FLAP_H,
+                    )
+                } else {
+                    LedClock(footer.clock, blink = layout.blinkingColon, pitch = p * U.CLOCK_PITCH)
+                }
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(p * U.ROW_GAP)) {
             repeat(2) { i ->
                 Module(g.tickerW, p) {
-                    DotMatrixText(
+                    BoardText(
                         footer.messages.getOrNull(i).orEmpty(),
                         chars = g.tickerChars,
-                        scrollSpeed = layout.marqueeColsPerSecond,
+                        layout = layout
                     )
                 }
             }
@@ -656,7 +673,7 @@ private fun LedClock(clock: String, blink: Boolean, pitch: Dp) {
 // Pezzi di base
 // ---------------------------------------------------------------------------------------------
 
-/** Modulo LED: rettangolo antracite che ospita una colonna della riga. */
+/** Modulo: rettangolo antracite (o alloggiamento delle palette) che ospita una colonna della riga. */
 @Composable
 private fun Module(
     widthDots: Float,
@@ -667,10 +684,71 @@ private fun Module(
     Box(
         Modifier
             .size(p * widthDots, p * heightDots)
-            .background(LocalBoardColors.current.module, RoundedCornerShape(p * 0.8f))
+            .background(
+                LocalBoardColors.current.let {
+                    if (LocalBoardStyle.current == BoardStyle.SplitFlap) it.flapHousing else it.module
+                },
+                RoundedCornerShape(p * 0.8f),
+            )
             .padding(horizontal = p * U.CELL_PAD_X),
         contentAlignment = Alignment.CenterStart,
     ) { content() }
+}
+
+/**
+ * Testo di una colonna, a LED o a palette secondo [LocalBoardStyle]. Dove i LED scorrerebbero
+ * ([marquee] diverso da [Marquee.Off]) le palette mostrano il testo a pagine.
+ */
+@Composable
+private fun BoardText(
+    text: String,
+    chars: Int,
+    layout: BoardLayout,
+    pitch: Dp = LocalDotPitch.current,
+    align: DotAlign = DotAlign.Start,
+    marquee: Marquee = Marquee.Auto,
+    /** Altezza delle palette, in punti di [pitch]. */
+    flapHeight: Float = Flap.HEIGHT,
+) {
+    if (LocalBoardStyle.current == BoardStyle.SplitFlap) {
+        SplitFlapText(
+            text,
+            chars = chars,
+            pitch = pitch,
+            heightDots = flapHeight,
+            align = align,
+            paged = marquee != Marquee.Off,
+            pageMillis = layout.flapPageMillis,
+        )
+    } else {
+        DotMatrixText(
+            text,
+            chars = chars,
+            pitch = pitch,
+            align = align,
+            marquee = marquee,
+            scrollSpeed = layout.marqueeColsPerSecond,
+        )
+    }
+}
+
+/** Marchio dell'impresa nella prima colonna: LED, o stampato su una palette. */
+@Composable
+private fun BoardLogo(d: Departure?, layout: BoardLayout) {
+    when {
+        LocalBoardStyle.current == BoardStyle.SplitFlap ->
+            FlapLogo(d?.logo, layout.logoCols, sampling = d?.logoSampling ?: DotSampling.Alpha)
+
+        d?.logo != null -> DotMatrixImage(
+            d.logo,
+            slotCols = layout.logoCols,
+            sampling = d.logoSampling,
+            threshold = d.logoThreshold,
+            density = layout.logoDensity,
+        )
+
+        else -> LedBlank(layout.logoCols, DotMatrixFont.ROWS)
+    }
 }
 
 @Composable
