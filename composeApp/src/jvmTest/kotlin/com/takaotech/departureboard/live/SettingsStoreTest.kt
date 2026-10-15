@@ -226,9 +226,9 @@ class SettingsStoreTest {
         SettingsStore(path).use { store ->
             val state = LiveBoardState(sources, settingsStore = store)
             state.restoreSettings()
-            state.announceBlink = 5.seconds
+            state.announceBlink = 20.seconds
             store.awaitSaved(
-                BoardSettings(Selection(StationSource.Rfi, milano), announceBlinkSeconds = 5)
+                BoardSettings(Selection(StationSource.Rfi, milano), announceBlinkSeconds = 20)
             )
         }
 
@@ -236,19 +236,19 @@ class SettingsStoreTest {
             val state = LiveBoardState(sources, settingsStore = store)
             assertEquals(LiveBoardState.DEFAULT_ANNOUNCE_BLINK, state.announceBlink)
             state.restoreSettings()
-            assertEquals(5.seconds, state.announceBlink)
+            assertEquals(20.seconds, state.announceBlink)
         }
     }
 
     @Test
     fun `una durata del lampeggio scritta a mano si aggancia all'opzione più vicina`() =
         runBlocking {
-            File(path).apply { parentFile.mkdirs() }.writeText("""{"announceBlinkSeconds":20}""")
+            File(path).apply { parentFile.mkdirs() }.writeText("""{"announceBlinkSeconds":45}""")
 
             SettingsStore(path).use { store ->
                 val state = LiveBoardState(sources, settingsStore = store)
                 state.restoreSettings()
-                assertEquals(15.seconds, state.announceBlink)
+                assertEquals(30.seconds, state.announceBlink)
             }
         }
 

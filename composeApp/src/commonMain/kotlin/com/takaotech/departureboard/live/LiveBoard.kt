@@ -83,8 +83,8 @@ import com.takaotech.departureboard.rfi.RfiMapper
 import com.takaotech.departureboard.rfi.Station
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -330,7 +330,8 @@ class LiveBoardState(
         }
 
     /**
-     * Quanto lampeggia (a LED) la riga del treno annunciato, da quando comincia il jingle;
+     * Quanto lampeggia (a LED) la riga del treno annunciato, da quando comincia il jingle (o
+     * da quando si vede la variazione, con gli annunci sonori spenti);
      * agganciata all'opzione più vicina di [ANNOUNCE_BLINK_OPTIONS].
      */
     var announceBlink: Duration
@@ -354,31 +355,50 @@ class LiveBoardState(
         }
     }
 
-    /** Numero del treno dell'annuncio appena cominciato: la sua riga lampeggia per [announceBlink]. */
-    var announcedTrain by mutableStateOf<String?>(null)
-        private set
+    /** Lampeggi in corso per numero di treno: più lampeggi dello stesso treno si accavallano. */
+    private var blinkCounts by mutableStateOf<Map<String, Int>>(emptyMap())
+
+    /** Numeri dei treni annunciati la cui riga lampeggia in questo momento. */
+    val blinkingTrains: Set<String> get() = blinkCounts.keys
+
+    /** Treni da far lampeggiare, raccolti da [blinkAnnouncedRows]. */
+    private val blinkRequests = Channel<List<String>>(Channel.UNLIMITED)
 
     /**
-     * Fa lampeggiare la riga di ogni annuncio quando comincia a sentirsi (col jingle); gira
-     * finché non viene cancellata.
+     * Fa lampeggiare per [announceBlink] la riga di ogni annuncio: quando comincia a sentirsi
+     * (col jingle) o, se gli annunci sonori sono spenti, appena il tabellone mostra la
+     * variazione. Gira finché non viene cancellata.
      */
-    suspend fun blinkAnnouncedRows() {
-        val announcer = announcer ?: return
+    suspend fun blinkAnnouncedRows(): Unit = coroutineScope {
+        announcer?.let { announcer ->
+            launch {
+                announcer.started.collect { blinkRequests.trySend(listOf(it.train.number)) }
+            }
+        }
         try {
-            announcer.started.collectLatest { announcement ->
-                announcedTrain = announcement.train.number
-                delay(announceBlink)
-                announcedTrain = null
+            for (numbers in blinkRequests) {
+                val duration = announceBlink
+                numbers.forEach { number -> launch { blink(number, duration) } }
             }
         } finally {
-            announcedTrain = null
+            blinkCounts = emptyMap()
         }
     }
 
-    /** [departures] con la riga del treno annunciato ([announcedTrain]) che lampeggia. */
+    private suspend fun blink(number: String, duration: Duration) {
+        blinkCounts += number to (blinkCounts[number] ?: 0) + 1
+        try {
+            delay(duration)
+        } finally {
+            val left = (blinkCounts[number] ?: 1) - 1
+            blinkCounts = if (left > 0) blinkCounts + (number to left) else blinkCounts - number
+        }
+    }
+
+    /** [departures] con le righe dei treni annunciati ([blinkingTrains]) che lampeggiano. */
     val boardDepartures: List<Departure>
-        get() = announcedTrain?.let { number ->
-            departures.map { if (it.number == number) it.copy(blink = true) else it }
+        get() = blinkingTrains.takeIf { it.isNotEmpty() }?.let { numbers ->
+            departures.map { if (it.number in numbers) it.copy(blink = true) else it }
         } ?: departures
 
     /** Se il tabellone ha un motore per il suono delle palette. */
@@ -559,8 +579,12 @@ class LiveBoardState(
             val news = announcements.update(key.second, key.third, board)
             when {
                 news.isEmpty() -> Unit
-                announce -> announcer?.enqueue(news)
-                else -> DebugLog.d(Announcer.TAG) { "Annunci spenti: scartati ${news.joinToString { it.code }}" }
+                announce && announcer != null -> announcer.enqueue(news)
+                else -> {
+                    DebugLog.d(Announcer.TAG) { "Annunci spenti: scartati ${news.joinToString { it.code }}" }
+                    // Senza voce le righe lampeggiano subito, tutte insieme.
+                    blinkRequests.trySend(news.map { it.train.number }.distinct())
+                }
             }
             loadedKey = key
             updatedAt = localNow()
@@ -580,10 +604,10 @@ class LiveBoardState(
 
     companion object {
         /** Lampeggio della riga del treno annunciato se non se ne è scelto un altro. */
-        val DEFAULT_ANNOUNCE_BLINK = 4.seconds
+        val DEFAULT_ANNOUNCE_BLINK = 10.seconds
 
         /** Durate del lampeggio della riga del treno annunciato tra cui scegliere. */
-        val ANNOUNCE_BLINK_OPTIONS = (4..15).map { it.seconds }
+        val ANNOUNCE_BLINK_OPTIONS = (10..30).map { it.seconds }
 
         /** Pausa oltre la quale gli annunci ripartono da una nuova base. */
         val STALE_PAUSE = 1.minutes
@@ -798,15 +822,19 @@ private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDism
                 SwitchRow("Scorrimento automatico", state.autoScroll) { state.autoScroll = it }
                 if (state.canAnnounce) {
                     SwitchRow("Annunci sonori", state.announce) { state.announce = it }
-                    if (state.announce && state.boardStyle == BoardStyle.Led) {
-                        IntervalSlider(
-                            label = "Lampeggio del treno annunciato",
-                            value = state.announceBlink,
-                            options = LiveBoardState.ANNOUNCE_BLINK_OPTIONS,
-                            onChange = { state.announceBlink = it },
-                            hint = "Da quando comincia il jingle",
-                        )
-                    }
+                }
+                if (state.boardStyle == BoardStyle.Led) {
+                    IntervalSlider(
+                        label = "Lampeggio del treno annunciato",
+                        value = state.announceBlink,
+                        options = LiveBoardState.ANNOUNCE_BLINK_OPTIONS,
+                        onChange = { state.announceBlink = it },
+                        hint = if (state.canAnnounce && state.announce) {
+                            "Da quando comincia il jingle"
+                        } else {
+                            "Da quando il tabellone mostra la variazione"
+                        },
+                    )
                 }
                 Text("Aspetto", style = MaterialTheme.typography.titleSmall)
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {

@@ -90,8 +90,8 @@ data class Departure(
     /** Testo della fonte al posto dei minuti ("RITARDO"): se c'è, si mostra com'è e scorre se non entra. */
     val delayText: String = "",
     /**
-     * Il testo della riga lampeggia finché è true (solo a LED): segnala il treno dell'annuncio
-     * appena partito. Il lampeggio comincia spento, con fasi di [BLINK_PHASE_MILLIS].
+     * Il testo della riga lampeggia finché è true (solo a LED): segnala il treno di un annuncio.
+     * Il lampeggio comincia spento, con fasi di [BLINK_PHASE_MILLIS].
      */
     val blink: Boolean = false,
 )
