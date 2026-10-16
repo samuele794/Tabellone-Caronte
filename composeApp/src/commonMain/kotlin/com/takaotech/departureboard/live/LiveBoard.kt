@@ -811,7 +811,12 @@ private fun countdown(seconds: Long): String =
 @Composable
 private fun secondsToRefresh(target: TimeSource.Monotonic.ValueTimeMark?): Long? {
     val seconds by produceState<Long?>(null, target) {
-        if (target == null) return@produceState
+        // produceState tiene il valore tra un target e l'altro: senza target va azzerato, o
+        // resterebbe il conto alla rovescia di prima (es. l'elenco FNM tornando a RFI).
+        if (target == null) {
+            value = null
+            return@produceState
+        }
         while (true) {
             val left = -target.elapsedNow()
             val s = ceil(left.toDouble(DurationUnit.SECONDS)).toLong().coerceAtLeast(0)

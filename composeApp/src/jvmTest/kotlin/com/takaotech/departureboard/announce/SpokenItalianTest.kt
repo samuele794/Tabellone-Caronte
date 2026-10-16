@@ -123,7 +123,9 @@ class SpokenItalianTest {
         assertEquals("Regionale", SpokenItalian.category("REG"))
         assertEquals("Regionale Veloce", SpokenItalian.category("RV"))
         assertEquals("RegioExpress", SpokenItalian.category("RE"))
-        assertEquals("Eurocity", SpokenItalian.category("EC"))
+        assertEquals("Eurositi", SpokenItalian.category("EC"))
+        assertEquals("Intersiti", SpokenItalian.category("IC"))
+        assertEquals("Intersiti Notte", SpokenItalian.category("INTERCITY NOTTE"))
         assertEquals("Eurostar", SpokenItalian.category("ES*"))
         assertEquals("Suburbano esse cinque", SpokenItalian.category("S5"))
         assertEquals("effe emme tre", SpokenItalian.category("FM3"))
@@ -145,6 +147,7 @@ class SpokenItalianTest {
         assertEquals("Trenitalia", SpokenItalian.carrier("LEONARDO EXPRESS"))
         assertEquals("Italo", SpokenItalian.carrier("ITALO"))
         assertEquals("Italo", SpokenItalian.carrier("NTV"))
+        assertEquals("Trenòrd", SpokenItalian.carrier("TRENORD"))
         assertEquals("Trenitalia Tper", SpokenItalian.carrier("TRENITALIA TPER"))
         assertEquals("Ente Autonomo Volturno", SpokenItalian.carrier("ENTE AUTONOMO VOLTURNO"))
     }

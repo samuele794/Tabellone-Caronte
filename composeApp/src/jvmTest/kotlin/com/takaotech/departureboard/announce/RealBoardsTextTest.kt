@@ -53,7 +53,7 @@ class RealBoardsTextTest {
     @Test
     fun `linea suburbana - binario sotterraneo e destinazione abbreviata in fondo alle fermate`() {
         assertEquals(
-            "Il treno Suburbano esse tredici ventiquattro tre quattro otto di Trenord, delle ore quattordici e cinquantasei, " +
+            "Il treno Suburbano esse tredici ventiquattro tre quattro otto di Trenòrd, delle ore quattordici e cinquantasei, " +
                     "per Garbagnate Milanese, è in partenza, dal binario due sotterraneo. " +
                     "Ferma a Milano Lancetti, Milano Bovisa P. e Bollate Centro.",
             departing(train(Fixtures.garibaldiPartenze, "24348")),
@@ -64,7 +64,7 @@ class RealBoardsTextTest {
     fun `VIA nelle note - relazioni di percorrenza dopo la destinazione`() {
         val t = train(Fixtures.garibaldiPartenze, "2271")
         assertEquals(
-            "Informiamo i viaggiatori che il treno RegioExpress ventidue settantuno di Trenord, " +
+            "Informiamo i viaggiatori che il treno RegioExpress ventidue settantuno di Trenòrd, " +
                     "delle ore quindici e venti, per Bergamo, via Villapizzone e Milano Lambrate, partirà dal binario tre.",
             text(Announcement.PlatformAssigned(t.copyPlatform("3"), Departures), places),
         )

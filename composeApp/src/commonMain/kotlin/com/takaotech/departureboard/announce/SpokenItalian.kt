@@ -272,22 +272,23 @@ object SpokenItalian {
         }
     }
 
+    /** Scritte come si pronunciano: "Intercity" la sintesi lo legge "interciti". */
     private val CATEGORIES = mapOf(
         "ALTA VELOCITA'" to "Alta Velocità",
         "ALTA VELOCITA" to "Alta Velocità",
         "AV" to "Alta Velocità",
-        "INTERCITY" to "Intercity",
-        "IC" to "Intercity",
-        "INTERCITY NOTTE" to "Intercity Notte",
-        "ICN" to "Intercity Notte",
+        "INTERCITY" to "Intersiti",
+        "IC" to "Intersiti",
+        "INTERCITY NOTTE" to "Intersiti Notte",
+        "ICN" to "Intersiti Notte",
         "REG" to "Regionale",
         "REGIONALE" to "Regionale",
         "R" to "Regionale",
         "REGIONALE VELOCE" to "Regionale Veloce",
         "RV" to "Regionale Veloce",
         "RE" to "RegioExpress",
-        "EUROCITY" to "Eurocity",
-        "EC" to "Eurocity",
+        "EUROCITY" to "Eurositi",
+        "EC" to "Eurositi",
         "EURONIGHT" to "Euronight",
         "EN" to "Euronight",
         "ES*" to "Eurostar",
@@ -322,6 +323,8 @@ object SpokenItalian {
         "INTERCITY NOTTE" to "Trenitalia",
         "LEONARDO EXPRESS" to "Trenitalia",
         "NTV" to "Italo",
+        // Accento grafico come per "tré": senza, la sintesi dice "Trènord".
+        "TRENORD" to "Trenòrd",
     )
 
     /** Impresa ferroviaria: "TRENITALIA" → "Trenitalia", "FRECCIAROSSA" → "Trenitalia", "NTV" → "Italo". */
