@@ -777,8 +777,8 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
     LaunchedEffect(state.background, state.muted, state.restored, lifecycle) {
         val sound = state.backgroundSound
         if (sound == null || !state.restored || !state.background || state.muted) return@LaunchedEffect
-        // Come gli aggiornamenti, il sottofondo tace mentre l'app non è visibile.
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { sound.play() }
+        // Come gli aggiornamenti, il sottofondo tace mentre l'app non è visibile; di notte tace comunque.
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { sound.playOutsideQuietHours() }
     }
     LaunchedEffect(
         state.source,
@@ -963,9 +963,12 @@ private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDism
                             value = state.backgroundVolume,
                             options = BACKGROUND_VOLUME_OPTIONS,
                             onChange = { state.backgroundVolume = it },
-                            hint = if (state.canAnnounce && state.announce) {
-                                "Scende al ${(BackgroundSound.DUCKED_VOLUME * 100).roundToInt()}% durante gli annunci"
-                            } else null,
+                            hint = buildString {
+                                append("Tace di notte (${BackgroundSound.QUIET_START}–${BackgroundSound.QUIET_END})")
+                                if (state.canAnnounce && state.announce) {
+                                    append("; scende al ${(BackgroundSound.DUCKED_VOLUME * 100).roundToInt()}% durante gli annunci")
+                                }
+                            },
                         )
                     }
                 }
