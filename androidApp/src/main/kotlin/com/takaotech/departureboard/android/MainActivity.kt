@@ -7,12 +7,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.takaotech.departureboard.AppTheme
 import com.takaotech.departureboard.android.MainActivity.Companion.ECO_BRIGHTNESS
 import com.takaotech.departureboard.live.LiveBoard
 import com.takaotech.departureboard.live.rememberNow
@@ -31,7 +31,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val eco = board.state.ecoMode
             LaunchedEffect(eco) { applyEcoMode(eco) }
-            MaterialTheme {
+            AppTheme {
                 LiveBoard(board.state, now = rememberNow(), charging = rememberIsCharging())
             }
         }

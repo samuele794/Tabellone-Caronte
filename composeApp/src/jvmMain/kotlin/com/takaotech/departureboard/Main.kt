@@ -133,7 +133,7 @@ fun main(args: Array<String>) {
                     }
                 },
             ) {
-                MaterialTheme {
+                AppTheme {
                     LiveBoard(state, now = rememberNow())
                 }
             }

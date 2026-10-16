@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -87,7 +86,7 @@ fun main() {
                 audioUnlocked = true
             }
         }
-        MaterialTheme {
+        AppTheme {
             Box {
                 LiveBoard(state, now = rememberNow())
                 val flapSound = state.boardStyle == BoardStyle.SplitFlap && state.flapSound
