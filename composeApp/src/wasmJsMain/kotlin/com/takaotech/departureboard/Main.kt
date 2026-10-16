@@ -30,6 +30,7 @@ import com.takaotech.departureboard.live.rememberNow
 import com.takaotech.departureboard.rfi.BoardMode
 import com.takaotech.departureboard.rfi.RfiBoardSource
 import com.takaotech.departureboard.rfi.RfiClient
+import com.takaotech.departureboard.tts.WebLoopPlayer
 import com.takaotech.departureboard.tts.WebPcmPlayer
 import com.takaotech.departureboard.tts.WebSoundPlayer
 import com.takaotech.departureboard.tts.WebSpeechEngine
@@ -61,6 +62,7 @@ fun main() {
     ).associateBy { it.source }
     val announcer = Announcer(WebSpeechEngine(), WebSoundPlayer())
     val flapClatter = FlapClatter(WebPcmPlayer())
+    val backgroundSound = BackgroundSound(WebLoopPlayer())
 
     ComposeViewport(document.body!!) {
         val state = remember {
@@ -70,6 +72,7 @@ fun main() {
                 stationCache = stationCache,
                 settingsStore = settingsStore,
                 flapClatter = flapClatter,
+                backgroundSound = backgroundSound,
             )
         }
         LaunchedEffect(state.mode, state.station) {
@@ -88,8 +91,8 @@ fun main() {
             Box {
                 LiveBoard(state, now = rememberNow())
                 val flapSound = state.boardStyle == BoardStyle.SplitFlap && state.flapSound
-                if ((state.announce || flapSound) && !audioUnlocked) {
-                    // Senza un gesto dell'utente il browser blocca jingle, voce e palette.
+                if ((state.announce || flapSound || state.background) && !audioUnlocked) {
+                    // Senza un gesto dell'utente il browser blocca jingle, voce, palette e sottofondo.
                     Text(
                         "Tocca il tabellone per attivare l'audio",
                         color = Color.White,

@@ -3,6 +3,7 @@ package com.takaotech.departureboard.android
 import android.app.Application
 import android.content.pm.ApplicationInfo
 import androidx.lifecycle.AndroidViewModel
+import com.takaotech.departureboard.BackgroundSound
 import com.takaotech.departureboard.FlapClatter
 import com.takaotech.departureboard.announce.Announcer
 import com.takaotech.departureboard.cache.StationCache
@@ -14,6 +15,7 @@ import com.takaotech.departureboard.live.LiveBoardState
 import com.takaotech.departureboard.live.SettingsStore
 import com.takaotech.departureboard.rfi.RfiBoardSource
 import com.takaotech.departureboard.rfi.RfiClient
+import com.takaotech.departureboard.tts.AndroidLoopPlayer
 import com.takaotech.departureboard.tts.AndroidPcmPlayer
 import com.takaotech.departureboard.tts.AndroidSoundPlayer
 import com.takaotech.departureboard.tts.AndroidSpeechEngine
@@ -46,6 +48,7 @@ class BoardViewModel(app: Application) : AndroidViewModel(app) {
     ).associateBy { it.source }
     private val announcer = Announcer(AndroidSpeechEngine(app), AndroidSoundPlayer(app))
     private val flapClatter = FlapClatter(AndroidPcmPlayer())
+    private val backgroundSound = BackgroundSound(AndroidLoopPlayer(app))
 
     val state = LiveBoardState(
         sources,
@@ -53,11 +56,13 @@ class BoardViewModel(app: Application) : AndroidViewModel(app) {
         stationCache = stationCache,
         settingsStore = settingsStore,
         flapClatter = flapClatter,
+        backgroundSound = backgroundSound,
     )
 
     override fun onCleared() {
         announcer.close()
         flapClatter.close()
+        backgroundSound.close()
         stationCache.close()
         settingsStore.close()
         sources.values.forEach { it.close() }

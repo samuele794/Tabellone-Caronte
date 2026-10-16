@@ -35,6 +35,7 @@ import com.takaotech.departureboard.rfi.RfiBoardSource
 import com.takaotech.departureboard.rfi.RfiClient
 import com.takaotech.departureboard.rfi.RfiTrain
 import com.takaotech.departureboard.tts.DesktopSpeechEngine
+import com.takaotech.departureboard.tts.JvmLoopPlayer
 import com.takaotech.departureboard.tts.JvmPcmPlayer
 import com.takaotech.departureboard.tts.JvmSoundPlayer
 import dev.nucleusframework.application.DecoratedWindow
@@ -86,6 +87,7 @@ fun main(args: Array<String>) {
     ).associateBy { it.source }
     val announcer = Announcer(DesktopSpeechEngine(), JvmSoundPlayer())
     val flapClatter = FlapClatter(JvmPcmPlayer())
+    val backgroundSound = BackgroundSound(JvmLoopPlayer())
     // Anche con `java -jar`, dove i jvmArgs di Gradle non arrivano.
     System.setProperty("skiko.fps.enabled", "true")
     System.setProperty("skiko.fps.count", "200")
@@ -98,6 +100,7 @@ fun main(args: Array<String>) {
                     stationCache = stationCache,
                     settingsStore = settingsStore,
                     flapClatter = flapClatter,
+                    backgroundSound = backgroundSound,
                 )
             }
         val title =
@@ -106,6 +109,7 @@ fun main(args: Array<String>) {
             onCloseRequest = {
                 announcer.close()
                 flapClatter.close()
+                backgroundSound.close()
                 stationCache.close()
                 settingsStore.close()
                 sources.values.forEach { it.close() }

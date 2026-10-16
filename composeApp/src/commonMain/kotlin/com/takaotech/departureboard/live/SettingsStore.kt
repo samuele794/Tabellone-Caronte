@@ -60,6 +60,10 @@ data class BoardSettings(
     val announceBlinkSeconds: Int = 10,
     /** Volume degli annunci (jingle e voce), in percentuale. */
     val announceVolume: Int = 100,
+    /** Sottofondo di stazione in loop. */
+    val background: Boolean = true,
+    /** Volume del sottofondo, in percentuale. */
+    val backgroundVolume: Int = 50,
 )
 
 /**

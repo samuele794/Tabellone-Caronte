@@ -58,6 +58,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.takaotech.departureboard.BackgroundSound
 import com.takaotech.departureboard.BoardColors
 import com.takaotech.departureboard.BoardFooter
 import com.takaotech.departureboard.BoardLabels
@@ -75,6 +76,7 @@ import com.takaotech.departureboard.cache.StationSource
 import com.takaotech.departureboard.debuglog.DebugLog
 import com.takaotech.departureboard.live.LiveBoardState.Companion.ANNOUNCE_BLINK_OPTIONS
 import com.takaotech.departureboard.live.LiveBoardState.Companion.ANNOUNCE_VOLUME_OPTIONS
+import com.takaotech.departureboard.live.LiveBoardState.Companion.BACKGROUND_VOLUME_OPTIONS
 import com.takaotech.departureboard.live.LiveBoardState.Companion.DEFAULT_REFRESH
 import com.takaotech.departureboard.live.LiveBoardState.Companion.FLAP_PAGE_PAUSE_OPTIONS
 import com.takaotech.departureboard.live.LiveBoardState.Companion.FLAP_VOLUME_OPTIONS
@@ -112,7 +114,8 @@ import kotlin.time.TimeSource
  * Con un [announcer] le variazioni tra un aggiornamento e il successivo vengono annunciate a voce;
  * con una [stationCache] gli elenchi stazioni si scaricano al più una volta al mese; con un
  * [settingsStore] stazione, scorrimento, annunci e intervalli di aggiornamento si ritrovano alla
- * riapertura dell'app. Con un [flapClatter] il tabellone a palette crepita quando gira.
+ * riapertura dell'app. Con un [flapClatter] il tabellone a palette crepita quando gira; con un
+ * [backgroundSound] suona in loop il sottofondo di stazione.
  */
 @Stable
 class LiveBoardState(
@@ -124,6 +127,8 @@ class LiveBoardState(
     private val settingsStore: SettingsStore? = null,
     /** Suono delle palette; null = la piattaforma non lo riproduce. */
     val flapClatter: FlapClatter? = null,
+    /** Sottofondo di stazione; null = la piattaforma non lo riproduce. */
+    val backgroundSound: BackgroundSound? = null,
 ) {
     private val mapper = RfiMapper()
     private val announcements = BoardAnnouncements()
@@ -155,6 +160,12 @@ class LiveBoardState(
     private var flapPagePauseState by mutableStateOf(DEFAULT_FLAP_PAGE_PAUSE)
     private var announceBlinkState by mutableStateOf(DEFAULT_ANNOUNCE_BLINK)
     private var announceVolumeState by mutableIntStateOf(DEFAULT_ANNOUNCE_VOLUME)
+    private var backgroundState by mutableStateOf(true)
+    private var backgroundVolumeState by mutableIntStateOf(DEFAULT_BACKGROUND_VOLUME)
+
+    init {
+        backgroundSound?.volume = DEFAULT_BACKGROUND_VOLUME / 100f
+    }
 
     /**
      * Se le impostazioni salvate sono già state ripristinate (o non c'è niente da ripristinare):
@@ -169,6 +180,7 @@ class LiveBoardState(
     private enum class Setting {
         Selection, AutoScroll, Announce, Refresh, ListRefresh, EcoMode, ScreenOnOnlyWhenCharging, OledPalette,
         BoardStyle, FlapSound, FlapVolume, FlapPagePause, AnnounceBlink, AnnounceVolume,
+        Background, BackgroundVolume,
     }
 
     /** Intervalli di aggiornamento scelti, per fornitore; chi manca usa [DEFAULT_REFRESH]. */
@@ -336,6 +348,33 @@ class LiveBoardState(
         announcer?.volume = announceVolumeState / 100f
     }
 
+    /** Sottofondo di stazione in loop, mentre il tabellone è visibile. */
+    var background: Boolean
+        get() = backgroundState
+        set(value) {
+            backgroundState = value
+            changed(Setting.Background)
+        }
+
+    /**
+     * Volume del sottofondo, in percentuale; agganciato all'opzione più vicina di
+     * [BACKGROUND_VOLUME_OPTIONS]. Vale subito, anche a sottofondo in corso.
+     */
+    var backgroundVolume: Int
+        get() = backgroundVolumeState
+        set(value) {
+            applyBackgroundVolume(value)
+            changed(Setting.BackgroundVolume)
+        }
+
+    private fun applyBackgroundVolume(percent: Int) {
+        backgroundVolumeState = BACKGROUND_VOLUME_OPTIONS.minBy { abs(it - percent) }
+        backgroundSound?.volume = backgroundVolumeState / 100f
+    }
+
+    /** Se il tabellone ha un motore per il sottofondo. */
+    val canPlayBackground get() = backgroundSound != null
+
     /**
      * Pausa su ogni pagina di un testo lungo nel tabellone a palette, contata dalla fine della
      * girata; agganciata all'opzione più vicina di [FLAP_PAGE_PAUSE_OPTIONS].
@@ -360,16 +399,28 @@ class LiveBoardState(
         }
 
     /**
-     * Abbassa il crepitio delle palette mentre si diffonde un annuncio
-     * ([FlapClatter.DUCKED_VOLUME]); gira finché non viene cancellata.
+     * Mentre si diffonde un annuncio abbassa il crepitio delle palette
+     * ([FlapClatter.DUCKED_VOLUME]) e, a poco a poco, il sottofondo: comincia a scendere quando
+     * comincia il jingle e arriva a [BackgroundSound.DUCKED_VOLUME] quando il jingle finisce; a
+     * fine annuncio risale in [BackgroundSound.RESTORE_DURATION]. Gira finché non viene cancellata.
      */
-    suspend fun duckFlapsDuringAnnouncements() {
-        val clatter = flapClatter ?: return
-        val announcer = announcer ?: return
+    suspend fun duckSoundsDuringAnnouncements(): Unit = coroutineScope {
+        val announcer = announcer ?: return@coroutineScope
+        val background = backgroundSound
+        if (flapClatter == null && background == null) return@coroutineScope
+        if (background != null) launch {
+            announcer.started.collect {
+                background.duck(announcer.jingleDuration() ?: BackgroundSound.QUICK_DUCK)
+            }
+        }
         try {
-            announcer.speaking.collect { clatter.ducked = it }
+            announcer.speaking.collect { speaking ->
+                flapClatter?.ducked = speaking
+                if (!speaking) background?.restore()
+            }
         } finally {
-            clatter.ducked = false
+            flapClatter?.ducked = false
+            background?.restore()
         }
     }
 
@@ -445,6 +496,10 @@ class LiveBoardState(
             flapPagePauseState = saved.flapPageSeconds.seconds.nearestOf(FLAP_PAGE_PAUSE_OPTIONS)
         }
         if (Setting.AnnounceVolume !in changedBeforeRestore) applyAnnounceVolume(saved.announceVolume)
+        if (Setting.Background !in changedBeforeRestore) backgroundState = saved.background
+        if (Setting.BackgroundVolume !in changedBeforeRestore) {
+            applyBackgroundVolume(saved.backgroundVolume)
+        }
         if (Setting.AnnounceBlink !in changedBeforeRestore) {
             announceBlinkState =
                 saved.announceBlinkSeconds.seconds.nearestOf(ANNOUNCE_BLINK_OPTIONS)
@@ -485,6 +540,8 @@ class LiveBoardState(
                 flapPageSeconds = flapPagePause.inWholeSeconds.toInt(),
                 announceBlinkSeconds = announceBlink.inWholeSeconds.toInt(),
                 announceVolume = announceVolume,
+                background = background,
+                backgroundVolume = backgroundVolume,
             )
         )
     }
@@ -629,6 +686,12 @@ class LiveBoardState(
         /** Volumi degli annunci tra cui scegliere, in percentuale. */
         val ANNOUNCE_VOLUME_OPTIONS = (10..100 step 10).toList()
 
+        /** Volume del sottofondo se non se ne è scelto un altro, in percentuale. */
+        const val DEFAULT_BACKGROUND_VOLUME = 50
+
+        /** Volumi del sottofondo tra cui scegliere, in percentuale. */
+        val BACKGROUND_VOLUME_OPTIONS = (10..100 step 10).toList()
+
         /** Lampeggio della riga del treno annunciato se non se ne è scelto un altro. */
         val DEFAULT_ANNOUNCE_BLINK = 10.seconds
 
@@ -684,13 +747,19 @@ private fun Map<StationSource, Duration>.inSeconds(): Map<StationSource, Int> =
 @Composable
 fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = null) {
     LaunchedEffect(Unit) { state.restoreSettings() }
-    LaunchedEffect(state) { state.duckFlapsDuringAnnouncements() }
+    LaunchedEffect(state) { state.duckSoundsDuringAnnouncements() }
     LaunchedEffect(state) { state.blinkAnnouncedRows() }
     LaunchedEffect(state.source, state.restored) {
         if (state.restored && state.stations(state.source).isEmpty()) state.loadStations()
     }
     val interval = state.refreshInterval()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(state.background, state.restored, lifecycle) {
+        val sound = state.backgroundSound
+        if (sound == null || !state.restored || !state.background) return@LaunchedEffect
+        // Come gli aggiornamenti, il sottofondo tace mentre l'app non è visibile.
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { sound.play() }
+    }
     LaunchedEffect(
         state.source,
         state.station.id,
@@ -860,6 +929,20 @@ private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDism
                             options = LiveBoardState.ANNOUNCE_VOLUME_OPTIONS,
                             onChange = { state.announceVolume = it },
                             hint = "Jingle e voce, rispetto al volume del dispositivo",
+                        )
+                    }
+                }
+                if (state.canPlayBackground) {
+                    SwitchRow("Sottofondo di stazione", state.background) { state.background = it }
+                    if (state.background) {
+                        VolumeSlider(
+                            label = "Volume del sottofondo",
+                            value = state.backgroundVolume,
+                            options = BACKGROUND_VOLUME_OPTIONS,
+                            onChange = { state.backgroundVolume = it },
+                            hint = if (state.canAnnounce && state.announce) {
+                                "Scende al ${(BackgroundSound.DUCKED_VOLUME * 100).roundToInt()}% durante gli annunci"
+                            } else null,
                         )
                     }
                 }

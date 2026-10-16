@@ -4,6 +4,7 @@ import com.takaotech.departureboard.debuglog.DebugLog
 import com.takaotech.departureboard.resources.Res
 import com.takaotech.departureboard.tts.SoundPlayer
 import com.takaotech.departureboard.tts.SpeechEngine
+import com.takaotech.departureboard.tts.mp3Duration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration
 
 /**
  * Diffonde gli annunci uno alla volta, nell'ordine in cui arrivano: prima il jingle, poi il testo
@@ -32,6 +34,8 @@ class Announcer(
     private val speech: SpeechEngine,
     private val sound: SoundPlayer,
     jingle: suspend () -> ByteArray = { Res.readBytes(JINGLE) },
+    /** Durata del jingle dai suoi byte; null se non si sa. */
+    jingleLength: (ByteArray) -> Duration? = ::mp3Duration,
     context: CoroutineContext = Dispatchers.Default,
     private val onError: (Throwable) -> Unit = { e -> DebugLog.d(TAG) { "Annuncio non riuscito: $e" } },
 ) : AutoCloseable {
@@ -40,6 +44,10 @@ class Announcer(
     private val queue = Channel<Pair<Int, Announcement>>(Channel.UNLIMITED)
     private val jingleBytes =
         scope.async { runCatching { jingle() }.onFailure(onError).getOrNull() }
+    private val jingleDuration = scope.async { jingleBytes.await()?.let(jingleLength) }
+
+    /** Quanto dura il jingle che precede ogni annuncio; null se manca o non si sa. */
+    suspend fun jingleDuration(): Duration? = jingleDuration.await()
 
     /** Cresce a ogni [clear]: gli annunci accodati prima vengono scartati. */
     @Volatile

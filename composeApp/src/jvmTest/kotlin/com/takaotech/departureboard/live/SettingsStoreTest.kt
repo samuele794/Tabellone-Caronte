@@ -1,5 +1,6 @@
 package com.takaotech.departureboard.live
 
+import com.takaotech.departureboard.BackgroundSound
 import com.takaotech.departureboard.BoardStyle
 import com.takaotech.departureboard.FlapClatter
 import com.takaotech.departureboard.announce.Announcement
@@ -9,6 +10,7 @@ import com.takaotech.departureboard.cache.StationSource
 import com.takaotech.departureboard.rfi.BoardMode
 import com.takaotech.departureboard.rfi.RfiBoard
 import com.takaotech.departureboard.rfi.Station
+import com.takaotech.departureboard.tts.LoopPlayer
 import com.takaotech.departureboard.tts.PcmPlayer
 import com.takaotech.departureboard.tts.SoundPlayer
 import com.takaotech.departureboard.tts.SpeechEngine
@@ -340,7 +342,7 @@ class SettingsStoreTest {
         Announcer(speech, sound, jingle = { ByteArray(0) }).use { announcer ->
             FlapClatter(SilentPlayer, clicks = { ByteArray(0) }).use { clatter ->
                 val state = LiveBoardState(sources, announcer = announcer, flapClatter = clatter)
-                val duck = launch { state.duckFlapsDuringAnnouncements() }
+                val duck = launch { state.duckSoundsDuringAnnouncements() }
                 announcer.enqueue(
                     listOf(
                         Announcement.Imminent(
@@ -356,6 +358,52 @@ class SettingsStoreTest {
                 duck.cancel()
             }
         }
+    }
+
+    @Test
+    fun `sottofondo e volume sopravvivono alla riapertura e arrivano al sottofondo`() =
+        runBlocking {
+            SettingsStore(path).use { store ->
+                val state = LiveBoardState(sources, settingsStore = store)
+                state.restoreSettings()
+                state.background = false
+                state.backgroundVolume = 70
+                store.awaitSaved(
+                    BoardSettings(
+                        Selection(StationSource.Rfi, milano),
+                        background = false,
+                        backgroundVolume = 70,
+                    )
+                )
+            }
+
+            SettingsStore(path).use { store ->
+                BackgroundSound(SilentLoop).use { background ->
+                    val state =
+                        LiveBoardState(sources, settingsStore = store, backgroundSound = background)
+                    assertTrue(state.background)
+                    assertEquals(LiveBoardState.DEFAULT_BACKGROUND_VOLUME, state.backgroundVolume)
+                    assertEquals(0.5f, background.volume)
+                    state.restoreSettings()
+                    assertFalse(state.background)
+                    assertEquals(70, state.backgroundVolume)
+                    assertEquals(0.7f, background.volume)
+                }
+            }
+        }
+
+    @Test
+    fun `un file senza il sottofondo lo accende a metà volume`() = runBlocking {
+        File(path).apply { parentFile.mkdirs() }.writeText("""{"oledPalette":true}""")
+
+        val loaded = SettingsStore(path).use { it.load() }
+        assertTrue(loaded.background)
+        assertEquals(50, loaded.backgroundVolume)
+    }
+
+    private object SilentLoop : LoopPlayer {
+        override suspend fun loop(path: String, gain: StateFlow<Float>) = Unit
+        override fun close() = Unit
     }
 
     private object SilentPlayer : PcmPlayer {

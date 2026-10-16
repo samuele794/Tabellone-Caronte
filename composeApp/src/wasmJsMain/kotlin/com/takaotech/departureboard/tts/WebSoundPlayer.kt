@@ -29,10 +29,11 @@ class WebSoundPlayer : SoundPlayer {
     override fun close() {}
 }
 
-private external class Audio(src: String) : JsAny {
+internal external class Audio(src: String) : JsAny {
     var onended: ((JsAny) -> Unit)?
     var onerror: ((JsAny) -> Unit)?
     var volume: Double
+    var loop: Boolean
     fun play(): kotlin.js.Promise<JsAny?>
     fun pause()
 }

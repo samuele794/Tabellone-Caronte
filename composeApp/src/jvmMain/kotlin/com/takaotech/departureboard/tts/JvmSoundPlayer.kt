@@ -13,7 +13,7 @@ class JvmSoundPlayer : SoundPlayer {
     override suspend fun play(bytes: ByteArray, volume: Float, onStart: () -> Unit) =
         coroutineScope {
             val player =
-                Player(ByteArrayInputStream(bytes), ScaledAudioDevice(volume.coerceIn(0f, 1f)))
+                Player(ByteArrayInputStream(bytes), ScaledAudioDevice { volume })
         val playing = async(Dispatchers.IO) {
             // JLayer non avvisa quando suona: decodifica e suona un frame alla volta, quindi parte subito.
             onStart()
@@ -30,11 +30,23 @@ class JvmSoundPlayer : SoundPlayer {
     override fun close() {}
 }
 
-/** Uscita di JLayer che moltiplica i campioni per [volume]: JLayer da solo non ha un volume. */
-internal class ScaledAudioDevice(private val volume: Float) : JavaSoundAudioDevice() {
+/**
+ * Uscita di JLayer che moltiplica i campioni per [gain] (0..1): JLayer da solo non ha un volume.
+ * Il guadagno si rilegge a ogni frame decodificato e, se cambia, passa in rampa lungo il frame,
+ * così non fa scalino (e quindi clic).
+ */
+internal class ScaledAudioDevice(private val gain: () -> Float) : JavaSoundAudioDevice() {
+    private var last = Float.NaN
+
     override fun writeImpl(samples: ShortArray, offs: Int, len: Int) {
-        if (volume < 1f) {
-            for (i in offs until offs + len) samples[i] = (samples[i] * volume).toInt().toShort()
+        val target = gain().coerceIn(0f, 1f)
+        val start = if (last.isNaN()) target else last
+        last = target
+        if (start < 1f || target < 1f) {
+            for (i in 0 until len) {
+                val g = start + (target - start) * i / len
+                samples[offs + i] = (samples[offs + i] * g).toInt().toShort()
+            }
         }
         super.writeImpl(samples, offs, len)
     }
