@@ -30,7 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -955,11 +954,9 @@ private fun LedBlank(cols: Int, rows: Int) {
     val px = with(LocalDensity.current) { p.toPx() }
     val off = LocalBoardColors.current.ledOff
     val leds = rememberLedBitmap(cols, rows, px, off) { ledBitmap(cols, rows, px, off) }
-    Spacer(
-        Modifier.size(p * cols, p * rows).clipToBounds().drawBehind {
-            leds.value?.let { drawImage(it) }
-        },
-    )
+    Canvas(Modifier.size(p * cols, p * rows).clipToBounds()) {
+        leds.value?.let { drawImage(it) }
+    }
 }
 
 /**

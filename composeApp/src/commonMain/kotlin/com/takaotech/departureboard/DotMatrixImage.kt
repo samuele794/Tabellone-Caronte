@@ -1,12 +1,11 @@
 package com.takaotech.departureboard
 
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -67,12 +66,9 @@ fun DotMatrixImage(
         val lit = List(grid.size) { i -> Offset((grid.xs[i] + 0.5f) * p, (grid.ys[i] + 0.5f) * p) }
         ledBitmap(cols, dotRows, p, offColor, lit, color)
     }
-    Spacer(
-        modifier
-            .size(pitch * slotCols, pitch * rows)
-            .clipToBounds()
-            .drawBehind { leds.value?.let { drawImage(it) } },
-    )
+    Canvas(modifier.size(pitch * slotCols, pitch * rows).clipToBounds()) {
+        leds.value?.let { drawImage(it) }
+    }
 }
 
 /** Quanto [this] pixel conta come "pieno" (0..1) secondo [sampling]. */

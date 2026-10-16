@@ -1,6 +1,6 @@
 package com.takaotech.departureboard
 
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -14,7 +14,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -129,51 +128,50 @@ internal fun SplitFlapText(
     val colors = LocalBoardColors.current
     val glyphs = LocalFlapGlyphs.current ?: rememberFlapGlyphs()
     val style = rememberFlapStyle(pitch * heightDots)
-    Spacer(
+    Canvas(
         modifier
             .size(pitch * Flap.width(chars), pitch * heightDots)
             .onScreen(onScreen)
             // Livello proprio: una palette che gira non fa ridisegnare il resto del tabellone.
-            .graphicsLayer()
-            .drawBehind {
-                val t = frame.longValue
-                val p = pitch.toPx()
-                val advance = DotMatrixFont.ADVANCE * p
-                val faces = glyphs.faces(
-                    style,
-                    fontPx = style.fontSize.toPx(),
-                    width = ((DotMatrixFont.ADVANCE - Flap.GAP) * p).roundToInt().coerceAtLeast(1),
-                    height = size.height.roundToInt().coerceAtLeast(1),
-                    cornerPx = Flap.CORNER * p,
+            .graphicsLayer(),
+    ) {
+        val t = frame.longValue
+        val p = pitch.toPx()
+        val advance = DotMatrixFont.ADVANCE * p
+        val faces = glyphs.faces(
+            style,
+            fontPx = style.fontSize.toPx(),
+            width = ((DotMatrixFont.ADVANCE - Flap.GAP) * p).roundToInt().coerceAtLeast(1),
+            height = size.height.roundToInt().coerceAtLeast(1),
+            cornerPx = Flap.CORNER * p,
+            colors = colors,
+        )
+        for (i in 0 until cells.size) {
+            val x = (i * advance).roundToInt()
+            val from = cells.from[i]
+            val to = cells.target[i]
+            val elapsed = t - cells.startAt[i]
+            val k = if (elapsed < 0) -1 else (elapsed / Flap.FLIP_MILLIS).toInt()
+            when {
+                cells.steps[i] == 0 || k >= cells.steps[i] -> drawFaces(
+                    x,
+                    faces[to],
+                    faces[to],
+                    -1f,
+                    colors
+                )
+
+                k < 0 -> drawFaces(x, faces[from], faces[from], -1f, colors)
+                else -> drawFaces(
+                    x,
+                    front = faces[FlapDrum.charAfter(from, to, k)],
+                    back = faces[FlapDrum.charAfter(from, to, k + 1)],
+                    progress = (elapsed % Flap.FLIP_MILLIS).toFloat() / Flap.FLIP_MILLIS,
                     colors = colors,
                 )
-                for (i in 0 until cells.size) {
-                    val x = (i * advance).roundToInt()
-                    val from = cells.from[i]
-                    val to = cells.target[i]
-                    val elapsed = t - cells.startAt[i]
-                    val k = if (elapsed < 0) -1 else (elapsed / Flap.FLIP_MILLIS).toInt()
-                    when {
-                        cells.steps[i] == 0 || k >= cells.steps[i] -> drawFaces(
-                            x,
-                            faces[to],
-                            faces[to],
-                            -1f,
-                            colors
-                        )
-
-                        k < 0 -> drawFaces(x, faces[from], faces[from], -1f, colors)
-                        else -> drawFaces(
-                            x,
-                            front = faces[FlapDrum.charAfter(from, to, k)],
-                            back = faces[FlapDrum.charAfter(from, to, k + 1)],
-                            progress = (elapsed % Flap.FLIP_MILLIS).toFloat() / Flap.FLIP_MILLIS,
-                            colors = colors,
-                        )
-                    }
-                }
-            },
-    )
+            }
+        }
+    }
 }
 
 /**
@@ -328,47 +326,46 @@ internal fun FlapLogo(
             if (t >= now + LOGO_FLIP_MILLIS) break
         }
     }
-    Spacer(
+    Canvas(
         modifier
             .size(pitch * slotCols, pitch * heightDots)
             .onScreen(onScreen)
-            .graphicsLayer()
-            .drawBehind {
-                val t = frame.longValue
-                val rect = Rect(Offset.Zero, size)
-                val corner = CornerRadius(Flap.CORNER * pitch.toPx())
-                fun face(logo: LogoInk?): DrawScope.() -> Unit =
-                    { logo?.let { drawLogo(it, rect) } }
+            .graphicsLayer(),
+    ) {
+        val t = frame.longValue
+        val rect = Rect(Offset.Zero, size)
+        val corner = CornerRadius(Flap.CORNER * pitch.toPx())
+        fun face(logo: LogoInk?): DrawScope.() -> Unit =
+            { logo?.let { drawLogo(it, rect) } }
 
-                val elapsed = t - flip.startAt
-                when {
-                    elapsed < 0 -> drawFlap(
-                        rect,
-                        corner,
-                        colors,
-                        -1f,
-                        face(flip.from),
-                        face(flip.from)
-                    )
+        val elapsed = t - flip.startAt
+        when {
+            elapsed < 0 -> drawFlap(
+                rect,
+                corner,
+                colors,
+                -1f,
+                face(flip.from),
+                face(flip.from)
+            )
 
-                    elapsed >= LOGO_FLIP_MILLIS -> drawFlap(
-                        rect,
-                        corner,
-                        colors,
-                        -1f,
-                        face(flip.to),
-                        face(flip.to)
-                    )
+            elapsed >= LOGO_FLIP_MILLIS -> drawFlap(
+                rect,
+                corner,
+                colors,
+                -1f,
+                face(flip.to),
+                face(flip.to)
+            )
 
-                    else -> drawFlap(
-                        rect, corner, colors,
-                        progress = elapsed.toFloat() / LOGO_FLIP_MILLIS,
-                        front = face(flip.from),
-                        back = face(flip.to),
-                    )
-                }
-            },
-    )
+            else -> drawFlap(
+                rect, corner, colors,
+                progress = elapsed.toFloat() / LOGO_FLIP_MILLIS,
+                front = face(flip.from),
+                back = face(flip.to),
+            )
+        }
+    }
 }
 
 /** Logo da stampare: l'immagine, il riquadro del disegno e il filtro che lo tinge. */

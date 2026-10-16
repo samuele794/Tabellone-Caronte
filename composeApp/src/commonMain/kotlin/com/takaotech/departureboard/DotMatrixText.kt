@@ -1,12 +1,11 @@
 package com.takaotech.departureboard
 
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -86,26 +85,21 @@ fun DotMatrixText(
     }
     val periodPx = (period * p).roundToInt()
 
-    Spacer(
-        modifier
-            .size(pitch * boxCols, pitch * DotMatrixFont.ROWS)
-            .clipToBounds()
-            .drawBehind {
-                val tiles = leds.value ?: return@drawBehind
-                val off = blank?.value
-                if (off != null && lit?.invoke() == false) {
-                    drawTiles(off, 0f)
-                } else if (ticker != null) {
-                    // Scorre a scatti interi di una colonna, come i moduli LED reali.
-                    val col = (ticker.value * scrollSpeed / 1000).toLong() % period
-                    val dx = (col * p).roundToInt().toFloat()
-                    drawTiles(tiles, -dx)
-                    drawTiles(tiles, periodPx - dx)
-                } else {
-                    drawTiles(tiles, 0f)
-                }
-            },
-    )
+    Canvas(modifier.size(pitch * boxCols, pitch * DotMatrixFont.ROWS).clipToBounds()) {
+        val tiles = leds.value ?: return@Canvas
+        val off = blank?.value
+        if (off != null && lit?.invoke() == false) {
+            drawTiles(off, 0f)
+        } else if (ticker != null) {
+            // Scorre a scatti interi di una colonna, come i moduli LED reali.
+            val col = (ticker.value * scrollSpeed / 1000).toLong() % period
+            val dx = (col * p).roundToInt().toFloat()
+            drawTiles(tiles, -dx)
+            drawTiles(tiles, periodPx - dx)
+        } else {
+            drawTiles(tiles, 0f)
+        }
+    }
 }
 
 /** Disegna i pezzi di una striscia che parte da [x], saltando quelli fuori dal riquadro. */
