@@ -393,6 +393,32 @@ class SettingsStoreTest {
         }
 
     @Test
+    fun `l'audio silenziato non si salva e non tocca le impostazioni dei suoni`() = runBlocking {
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            state.restoreSettings()
+            state.muted = true
+            assertTrue(state.announce)
+            assertTrue(state.background)
+            assertTrue(state.flapSound)
+            state.autoScroll = false
+            store.awaitSaved(
+                BoardSettings(
+                    Selection(StationSource.Rfi, milano),
+                    autoScroll = false
+                )
+            )
+        }
+
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            state.restoreSettings()
+            assertFalse(state.muted, "alla riapertura il tabellone torna a suonare")
+            assertFalse(state.autoScroll)
+        }
+    }
+
+    @Test
     fun `un file senza il sottofondo lo accende a metà volume`() = runBlocking {
         File(path).apply { parentFile.mkdirs() }.writeText("""{"oledPalette":true}""")
 

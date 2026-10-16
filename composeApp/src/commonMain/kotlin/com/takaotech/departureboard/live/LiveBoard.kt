@@ -375,6 +375,24 @@ class LiveBoardState(
     /** Se il tabellone ha un motore per il sottofondo. */
     val canPlayBackground get() = backgroundSound != null
 
+    private var mutedState by mutableStateOf(false)
+
+    /**
+     * Audio silenziato per il momento: annunci, sottofondo e palette tacciono senza che le loro
+     * impostazioni cambino. Non si salva: alla riapertura dell'app il tabellone torna a suonare.
+     * Silenziando si interrompe anche l'annuncio in corso; gli annunci che arrivano nel frattempo
+     * si scartano e le righe lampeggiano subito, come con gli annunci sonori spenti.
+     */
+    var muted: Boolean
+        get() = mutedState
+        set(value) {
+            mutedState = value
+            if (value) announcer?.clear()
+        }
+
+    /** Se il tabellone ha almeno un suono da poter silenziare. */
+    val canMute get() = canAnnounce || canPlayBackground || canFlapSound
+
     /**
      * Pausa su ogni pagina di un testo lungo nel tabellone a palette, contata dalla fine della
      * girata; agganciata all'opzione più vicina di [FLAP_PAGE_PAUSE_OPTIONS].
@@ -656,9 +674,11 @@ class LiveBoardState(
             val news = announcements.update(key.second, key.third, board)
             when {
                 news.isEmpty() -> Unit
-                announce && announcer != null -> announcer.enqueue(news)
+                announce && !muted && announcer != null -> announcer.enqueue(news)
                 else -> {
-                    DebugLog.d(Announcer.TAG) { "Annunci spenti: scartati ${news.joinToString { it.code }}" }
+                    DebugLog.d(Announcer.TAG) {
+                        "Annunci ${if (muted) "silenziati" else "spenti"}: scartati ${news.joinToString { it.code }}"
+                    }
                     // Senza voce le righe lampeggiano subito, tutte insieme.
                     blinkRequests.trySend(news.map { it.train.number }.distinct())
                 }
@@ -754,9 +774,9 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
     }
     val interval = state.refreshInterval()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(state.background, state.restored, lifecycle) {
+    LaunchedEffect(state.background, state.muted, state.restored, lifecycle) {
         val sound = state.backgroundSound
-        if (sound == null || !state.restored || !state.background) return@LaunchedEffect
+        if (sound == null || !state.restored || !state.background || state.muted) return@LaunchedEffect
         // Come gli aggiornamenti, il sottofondo tace mentre l'app non è visibile.
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { sound.play() }
     }
@@ -789,8 +809,9 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
         if (state.oledPalette) BoardColors.Oled else BoardColors()
     }
     val screenOn = !state.screenOnOnlyWhenCharging || charging != false
-    val clatter =
-        state.flapClatter.takeIf { state.boardStyle == BoardStyle.SplitFlap && state.flapSound }
+    val clatter = state.flapClatter.takeIf {
+        state.boardStyle == BoardStyle.SplitFlap && state.flapSound && !state.muted
+    }
     Box(
         Modifier.fillMaxSize().background(colors.frame).safeDrawingPadding()
             .then(if (screenOn) Modifier.keepScreenOn() else Modifier)
@@ -819,6 +840,8 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
                     listSecondsLeft = secondsToRefresh(state.nextListRefreshAt),
                 ),
                 onSettingsClick = { showSettings = true },
+                onMuteClick = if (state.canMute) ({ state.muted = !state.muted }) else null,
+                muted = state.muted,
                 onRefreshClick = state::requestRefresh,
                 refreshEnabled = state.canRefreshNow,
                 modifier = Modifier.fillMaxSize(),
@@ -978,7 +1001,7 @@ private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDism
                             options = LiveBoardState.FLAP_VOLUME_OPTIONS,
                             onChange = {
                                 state.flapVolume = it
-                                state.flapClatter?.preview()
+                                if (!state.muted) state.flapClatter?.preview()
                             },
                             hint = if (state.canAnnounce && state.announce) {
                                 "Scende al ${(FlapClatter.DUCKED_VOLUME * 100).roundToInt()}% durante gli annunci"

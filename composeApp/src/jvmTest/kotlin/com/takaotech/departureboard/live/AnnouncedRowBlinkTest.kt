@@ -22,6 +22,8 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -150,6 +152,63 @@ class AnnouncedRowBlinkTest {
         announcer.close()
         coroutineContext.cancelChildren()
     }
+
+    @Test
+    fun `con l'audio silenziato non si annuncia nulla e le righe variate lampeggiano subito`() =
+        runTest {
+            val announcer = announcer()
+            val source = FakeSource(trains)
+            val state = LiveBoardState(
+                mapOf(StationSource.Rfi to source), initial = milano, announcer = announcer,
+            )
+            val speaking = mutableListOf<Boolean>()
+            launch { announcer.speaking.collect { speaking += it } }
+            launch { state.blinkAnnouncedRows() }
+            state.refresh()
+            state.muted = true
+
+            source.trains = listOf(train(number = "9915"), train(number = "2162", platform = "4"))
+            state.refresh()
+            runCurrent()
+            assertEquals(setOf("2162"), state.blinkingTrains, "lampeggia senza aspettare il jingle")
+            assertTrue(state.announce, "silenziare non spegne gli annunci sonori")
+            advanceTimeBy(PREPARE_MILLIS + JINGLE_MILLIS)
+            assertEquals(listOf(false), speaking, "nessun annuncio è partito")
+            announcer.close()
+            coroutineContext.cancelChildren()
+        }
+
+    @Test
+    fun `silenziare interrompe l'annuncio in corso e riattivare fa ripartire i successivi`() =
+        runTest {
+            val announcer = announcer()
+            val source = FakeSource(trains)
+            val state = LiveBoardState(
+                mapOf(StationSource.Rfi to source), initial = milano, announcer = announcer,
+            )
+            var speaking = false
+            launch { announcer.speaking.collect { speaking = it } }
+            state.refresh()
+            source.trains = listOf(train(number = "9915"), train(number = "2162", platform = "4"))
+            state.refresh()
+            advanceTimeBy(PREPARE_MILLIS + 1)
+            assertTrue(speaking)
+
+            state.muted = true
+            runCurrent()
+            assertFalse(speaking, "l'annuncio in corso si interrompe")
+
+            state.muted = false
+            source.trains = listOf(
+                train(number = "9915", platform = "2"),
+                train(number = "2162", platform = "4")
+            )
+            state.refresh()
+            advanceTimeBy(PREPARE_MILLIS + 1)
+            assertTrue(speaking, "riattivato l'audio, il nuovo annuncio parte")
+            announcer.close()
+            coroutineContext.cancelChildren()
+        }
 
     @Test
     fun `senza motore per gli annunci le righe variate lampeggiano lo stesso`() = runTest {

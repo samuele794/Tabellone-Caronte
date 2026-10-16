@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -261,7 +262,8 @@ private class BoardGeometry(l: BoardLayout) {
  * l'altezza disponibile e mostra quante righe ci stanno.
  *
  * [status] è una scritta sulla destra della riga del titolo (es. l'ora dell'ultimo
- * aggiornamento); con [onSettingsClick] accanto compare una rotella delle impostazioni e con
+ * aggiornamento); con [onSettingsClick] accanto compare una rotella delle impostazioni, con
+ * [onMuteClick] un altoparlante per silenziare l'audio (barrato se [muted]) e con
  * [onRefreshClick] un bottone per aggiornare subito, spento finché [refreshEnabled] è falso.
  *
  * [style] sceglie come si scrive il testo: LED a matrice di punti o palette Solari, a parità di
@@ -278,6 +280,8 @@ fun DepartureBoard(
     style: BoardStyle = BoardStyle.Led,
     status: String? = null,
     onSettingsClick: (() -> Unit)? = null,
+    onMuteClick: (() -> Unit)? = null,
+    muted: Boolean = false,
     onRefreshClick: (() -> Unit)? = null,
     refreshEnabled: Boolean = true,
 ) {
@@ -301,7 +305,7 @@ fun DepartureBoard(
         ) {
             BoardPanel(
                 departures, footer, labels, layout, g, pitch, colors, status,
-                TitleActions(onSettingsClick, onRefreshClick, refreshEnabled),
+                TitleActions(onSettingsClick, onMuteClick, muted, onRefreshClick, refreshEnabled),
                 modifier = if (fill) Modifier.height(maxHeight) else Modifier,
             )
         }
@@ -428,6 +432,8 @@ private fun rowMetrics(p: Dp): RowMetrics = with(LocalDensity.current) {
 /** Bottoni a destra della riga del titolo; quelli null non compaiono. */
 private class TitleActions(
     val onSettingsClick: (() -> Unit)?,
+    val onMuteClick: (() -> Unit)?,
+    val muted: Boolean,
     val onRefreshClick: (() -> Unit)?,
     val refreshEnabled: Boolean,
 )
@@ -471,11 +477,89 @@ private fun TitleRow(
                 Modifier.align(Alignment.CenterVertically)
             )
         }
-        actions.onSettingsClick?.let { onClick ->
+        actions.onMuteClick?.let { onClick ->
             Spacer(Modifier.width(p * if (actions.onRefreshClick != null) 1 else 4))
+            MuteButton(
+                onClick,
+                actions.muted,
+                p,
+                colors,
+                Modifier.align(Alignment.CenterVertically)
+            )
+        }
+        actions.onSettingsClick?.let { onClick ->
+            val first = actions.onRefreshClick == null && actions.onMuteClick == null
+            Spacer(Modifier.width(p * if (first) 4 else 1))
             SettingsGear(onClick, p, colors, Modifier.align(Alignment.CenterVertically))
         }
     }
+}
+
+/**
+ * Altoparlante per silenziare l'audio, col colore delle etichette: con le onde finché suona,
+ * con una croce quando è silenziato ([muted]).
+ */
+@Composable
+private fun MuteButton(
+    onClick: () -> Unit,
+    muted: Boolean,
+    p: Dp,
+    colors: BoardColors,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier
+            .clip(CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .semantics {
+                contentDescription = if (muted) "Riattiva l'audio" else "Silenzia l'audio"
+            }
+            .padding(p * 1.5f),
+    ) {
+        Spacer(
+            Modifier.size(p * 8).drawWithCache {
+                val s = size.minDimension
+                val speaker = speakerPath(s)
+                val stroke = Stroke(s * 0.09f, cap = StrokeCap.Round)
+                onDrawBehind {
+                    drawPath(speaker, colors.label)
+                    if (muted) {
+                        val c = Offset(s * 0.80f, s * 0.5f)
+                        val d = s * 0.13f
+                        listOf(Offset(d, d), Offset(d, -d)).forEach { o ->
+                            drawLine(colors.label, c - o, c + o, stroke.width, StrokeCap.Round)
+                        }
+                    } else {
+                        // Due onde concentriche, centrate sulla bocca dell'altoparlante.
+                        listOf(0.17f, 0.33f).forEach { radius ->
+                            val r = s * radius
+                            drawArc(
+                                colors.label,
+                                startAngle = -45f,
+                                sweepAngle = 90f,
+                                useCenter = false,
+                                topLeft = Offset(s * 0.52f - r, s * 0.5f - r),
+                                size = Size(r * 2, r * 2),
+                                style = stroke,
+                            )
+                        }
+                    }
+                }
+            },
+        )
+    }
+}
+
+/** Corpo e cono dell'altoparlante, rivolto a destra, in un quadrato di lato [s]. */
+private fun speakerPath(s: Float): Path = Path().apply {
+    moveTo(s * 0.06f, s * 0.36f)
+    lineTo(s * 0.26f, s * 0.36f)
+    lineTo(s * 0.50f, s * 0.14f)
+    lineTo(s * 0.50f, s * 0.86f)
+    lineTo(s * 0.26f, s * 0.64f)
+    lineTo(s * 0.06f, s * 0.64f)
+    close()
 }
 
 /**
