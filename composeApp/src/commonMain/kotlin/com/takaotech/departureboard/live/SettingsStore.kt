@@ -64,6 +64,8 @@ data class BoardSettings(
     val background: Boolean = true,
     /** Volume del sottofondo, in percentuale. */
     val backgroundVolume: Int = 50,
+    /** Intro "terminale circolazione" a ogni avvio. */
+    val intro: Boolean = true,
 )
 
 /**

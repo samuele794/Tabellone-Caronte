@@ -63,6 +63,15 @@ class StationCache(
         return fresh
     }
 
+    /** Elenco di [source] già salvato, anche se scaduto, senza scaricare nulla; vuoto se non c'è. */
+    suspend fun cached(source: StationSource): List<Station> =
+        try {
+            store.data.first().sources[source]?.stations.orEmpty()
+        } catch (e: IOException) {
+            DebugLog.d(TAG) { "$source: lettura fallita (${e.message})" }
+            emptyList()
+        }
+
     private fun expiry(cached: CachedStations): Instant =
         Instant.fromEpochMilliseconds(cached.downloadedAt).plus(VALIDITY, timeZone)
 

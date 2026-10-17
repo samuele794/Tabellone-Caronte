@@ -14,6 +14,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.takaotech.departureboard.AppTheme
 import com.takaotech.departureboard.android.MainActivity.Companion.ECO_BRIGHTNESS
+import com.takaotech.departureboard.intro.IntroHost
 import com.takaotech.departureboard.live.LiveBoard
 import com.takaotech.departureboard.live.rememberNow
 
@@ -32,7 +33,14 @@ class MainActivity : ComponentActivity() {
             val eco = board.state.ecoMode
             LaunchedEffect(eco) { applyEcoMode(eco) }
             AppTheme {
-                LiveBoard(board.state, now = rememberNow(), charging = rememberIsCharging())
+                IntroHost(
+                    board.state,
+                    board.introPlayer,
+                    onFinished = { board.introDone = true },
+                    enabled = !board.introDone,
+                ) {
+                    LiveBoard(board.state, now = rememberNow(), charging = rememberIsCharging())
+                }
             }
         }
     }

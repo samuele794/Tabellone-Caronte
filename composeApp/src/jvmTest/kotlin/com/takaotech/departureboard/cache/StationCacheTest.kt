@@ -54,6 +54,18 @@ class StationCacheTest {
     }
 
     @Test
+    fun `l'elenco salvato si legge senza scaricare, anche scaduto`() = runBlocking {
+        cache().use { c ->
+            assertEquals(emptyList(), c.cached(StationSource.Rfi))
+            c.stations(StationSource.Rfi, fetching(milano))
+            clock.advance(60.days)
+            assertEquals(milano, c.cached(StationSource.Rfi))
+            assertEquals(emptyList(), c.cached(StationSource.Fnm))
+        }
+        assertEquals(1, downloads)
+    }
+
+    @Test
     fun `la cache sopravvive alla riapertura dello stesso file`() = runBlocking {
         cache().use { it.stations(StationSource.Rfi, fetching(milano)) }
 

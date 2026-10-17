@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +23,7 @@ import com.takaotech.departureboard.cache.StationCache
 import com.takaotech.departureboard.fnm.FnmBoardSource
 import com.takaotech.departureboard.fnm.FnmClient
 import com.takaotech.departureboard.fnm.FnmKeyStore
+import com.takaotech.departureboard.intro.IntroHost
 import com.takaotech.departureboard.live.LiveBoard
 import com.takaotech.departureboard.live.LiveBoardState
 import com.takaotech.departureboard.live.SettingsStore
@@ -62,6 +64,7 @@ fun main() {
     val announcer = Announcer(WebSpeechEngine(), WebSoundPlayer())
     val flapClatter = FlapClatter(WebPcmPlayer())
     val backgroundSound = BackgroundSound(WebLoopPlayer())
+    val introPlayer = WebSoundPlayer()
 
     ComposeViewport(document.body!!) {
         val state = remember {
@@ -87,20 +90,29 @@ fun main() {
             }
         }
         AppTheme {
-            Box {
-                LiveBoard(state, now = rememberNow())
-                val flapSound = state.boardStyle == BoardStyle.SplitFlap && state.flapSound
-                if ((state.announce || flapSound || state.background) && !audioUnlocked) {
-                    // Senza un gesto dell'utente il browser blocca jingle, voce, palette e sottofondo.
-                    Text(
-                        "Tocca il tabellone per attivare l'audio",
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
-                            .background(Color(0xCC000000)).padding(8.dp),
-                    )
-                }
+            // Il browser suona solo dopo un gesto: l'intro aspetta il primo tocco o tasto.
+            IntroHost(state, introPlayer, onFinished = {}, ready = audioUnlocked) {
+                LiveBoardWithAudioHint(state, audioUnlocked)
             }
+        }
+    }
+}
+
+/** Tabellone con l'avviso di toccarlo per attivare l'audio, finché il browser lo blocca. */
+@Composable
+private fun LiveBoardWithAudioHint(state: LiveBoardState, audioUnlocked: Boolean) {
+    Box {
+        LiveBoard(state, now = rememberNow())
+        val flapSound = state.boardStyle == BoardStyle.SplitFlap && state.flapSound
+        if ((state.announce || flapSound || state.background) && !audioUnlocked) {
+            // Senza un gesto dell'utente il browser blocca jingle, voce, palette e sottofondo.
+            Text(
+                "Tocca il tabellone per attivare l'audio",
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                    .background(Color(0xCC000000)).padding(8.dp),
+            )
         }
     }
 }

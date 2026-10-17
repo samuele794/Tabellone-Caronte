@@ -162,6 +162,7 @@ class LiveBoardState(
     private var announceVolumeState by mutableIntStateOf(DEFAULT_ANNOUNCE_VOLUME)
     private var backgroundState by mutableStateOf(true)
     private var backgroundVolumeState by mutableIntStateOf(DEFAULT_BACKGROUND_VOLUME)
+    private var introState by mutableStateOf(true)
 
     init {
         backgroundSound?.volume = DEFAULT_BACKGROUND_VOLUME / 100f
@@ -180,7 +181,7 @@ class LiveBoardState(
     private enum class Setting {
         Selection, AutoScroll, Announce, Refresh, ListRefresh, EcoMode, ScreenOnOnlyWhenCharging, OledPalette,
         BoardStyle, FlapSound, FlapVolume, FlapPagePause, AnnounceBlink, AnnounceVolume,
-        Background, BackgroundVolume,
+        Background, BackgroundVolume, Intro,
     }
 
     /** Intervalli di aggiornamento scelti, per fornitore; chi manca usa [DEFAULT_REFRESH]. */
@@ -375,6 +376,30 @@ class LiveBoardState(
     /** Se il tabellone ha un motore per il sottofondo. */
     val canPlayBackground get() = backgroundSound != null
 
+    /** Intro "terminale circolazione" a ogni avvio dell'app. */
+    var intro: Boolean
+        get() = introState
+        set(value) {
+            introState = value
+            changed(Setting.Intro)
+        }
+
+    private var introPlayingState by mutableStateOf(false)
+
+    /**
+     * L'intro è in corso: come con [muted], annunci, sottofondo e palette tacciono (e gli annunci
+     * si scartano), così non si sovrappongono alla sua musica. Non si salva.
+     */
+    var introPlaying: Boolean
+        get() = introPlayingState
+        set(value) {
+            introPlayingState = value
+            if (value) announcer?.clear()
+        }
+
+    /** Il tabellone non deve suonare nulla: audio silenziato o intro in corso. */
+    val soundsHeld: Boolean get() = muted || introPlaying
+
     private var mutedState by mutableStateOf(false)
 
     /**
@@ -518,6 +543,7 @@ class LiveBoardState(
         if (Setting.BackgroundVolume !in changedBeforeRestore) {
             applyBackgroundVolume(saved.backgroundVolume)
         }
+        if (Setting.Intro !in changedBeforeRestore) introState = saved.intro
         if (Setting.AnnounceBlink !in changedBeforeRestore) {
             announceBlinkState =
                 saved.announceBlinkSeconds.seconds.nearestOf(ANNOUNCE_BLINK_OPTIONS)
@@ -560,6 +586,7 @@ class LiveBoardState(
                 announceVolume = announceVolume,
                 background = background,
                 backgroundVolume = backgroundVolume,
+                intro = intro,
             )
         )
     }
@@ -649,6 +676,17 @@ class LiveBoardState(
         }
     }
 
+    /**
+     * Stazioni già nella cache, senza scaricare nulla: prima quelle del fornitore attuale, se non
+     * ci sono quelle degli altri. Vuoto senza cache.
+     */
+    suspend fun cachedStations(): List<Station> {
+        val cache = stationCache ?: return emptyList()
+        return cache.cached(source).ifEmpty {
+            availableSources.filter { it != source }.flatMap { cache.cached(it) }
+        }
+    }
+
     /** Scarica il tabellone; se fallisce tiene gli ultimi dati validi della stessa tabella. */
     suspend fun refresh() {
         val key = Triple(source, station.id, mode)
@@ -674,10 +712,10 @@ class LiveBoardState(
             val news = announcements.update(key.second, key.third, board)
             when {
                 news.isEmpty() -> Unit
-                announce && !muted && announcer != null -> announcer.enqueue(news)
+                announce && !soundsHeld && announcer != null -> announcer.enqueue(news)
                 else -> {
                     DebugLog.d(Announcer.TAG) {
-                        "Annunci ${if (muted) "silenziati" else "spenti"}: scartati ${news.joinToString { it.code }}"
+                        "Annunci ${if (soundsHeld) "silenziati" else "spenti"}: scartati ${news.joinToString { it.code }}"
                     }
                     // Senza voce le righe lampeggiano subito, tutte insieme.
                     blinkRequests.trySend(news.map { it.train.number }.distinct())
@@ -774,9 +812,9 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
     }
     val interval = state.refreshInterval()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(state.background, state.muted, state.restored, lifecycle) {
+    LaunchedEffect(state.background, state.soundsHeld, state.restored, lifecycle) {
         val sound = state.backgroundSound
-        if (sound == null || !state.restored || !state.background || state.muted) return@LaunchedEffect
+        if (sound == null || !state.restored || !state.background || state.soundsHeld) return@LaunchedEffect
         // Come gli aggiornamenti, il sottofondo tace mentre l'app non è visibile; di notte tace comunque.
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { sound.playOutsideQuietHours() }
     }
@@ -810,7 +848,7 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
     }
     val screenOn = !state.screenOnOnlyWhenCharging || charging != false
     val clatter = state.flapClatter.takeIf {
-        state.boardStyle == BoardStyle.SplitFlap && state.flapSound && !state.muted
+        state.boardStyle == BoardStyle.SplitFlap && state.flapSound && !state.soundsHeld
     }
     Box(
         Modifier.fillMaxSize().background(colors.frame).safeDrawingPadding()
@@ -1021,6 +1059,7 @@ private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDism
                         hint = "Dalla fine della girata; doppia in modalità risparmio",
                     )
                 }
+                SwitchRow("Intro all'avvio", state.intro) { state.intro = it }
                 Text("Risparmio energetico", style = MaterialTheme.typography.titleSmall)
                 SwitchRow("Modalità risparmio", state.ecoMode) { state.ecoMode = it }
                 SwitchRow("Fondo nero (schermi OLED)", state.oledPalette) { state.oledPalette = it }

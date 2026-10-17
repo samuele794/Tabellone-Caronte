@@ -50,6 +50,15 @@ class BoardViewModel(app: Application) : AndroidViewModel(app) {
     private val flapClatter = FlapClatter(AndroidPcmPlayer())
     private val backgroundSound = BackgroundSound(AndroidLoopPlayer(app))
 
+    /** Musica dell'intro d'avvio. */
+    val introPlayer = AndroidSoundPlayer(app)
+
+    /**
+     * L'intro è già stata vista (o saltata, o interrotta) in questo processo: una rotazione non la
+     * fa ripartire.
+     */
+    var introDone = false
+
     val state = LiveBoardState(
         sources,
         announcer = announcer,

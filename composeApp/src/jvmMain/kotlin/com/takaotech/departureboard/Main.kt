@@ -25,6 +25,10 @@ import com.takaotech.departureboard.cache.StationCache
 import com.takaotech.departureboard.fnm.FnmBoardSource
 import com.takaotech.departureboard.fnm.FnmClient
 import com.takaotech.departureboard.fnm.FnmKeyStore
+import com.takaotech.departureboard.intro.IntroHost
+import com.takaotech.departureboard.intro.IntroInfo
+import com.takaotech.departureboard.intro.IntroOverlay
+import com.takaotech.departureboard.intro.introBoardLayer
 import com.takaotech.departureboard.live.LiveBoard
 import com.takaotech.departureboard.live.LiveBoardState
 import com.takaotech.departureboard.live.SettingsStore
@@ -34,6 +38,7 @@ import com.takaotech.departureboard.rfi.BoardMode
 import com.takaotech.departureboard.rfi.RfiBoardSource
 import com.takaotech.departureboard.rfi.RfiClient
 import com.takaotech.departureboard.rfi.RfiTrain
+import com.takaotech.departureboard.rfi.Station
 import com.takaotech.departureboard.tts.DesktopSpeechEngine
 import com.takaotech.departureboard.tts.JvmLoopPlayer
 import com.takaotech.departureboard.tts.JvmPcmPlayer
@@ -57,6 +62,14 @@ fun main(args: Array<String>) {
         val seconds = args.getOrNull(2)?.toDoubleOrNull() ?: 0.0
         val german = "de" in args.drop(3)
         snapshot(out, seconds, german, style(args))
+        return
+    }
+    // ./gradlew run --args="--intro-snapshot intro.png [secondi]"
+    if (args.firstOrNull() == "--intro-snapshot") {
+        introSnapshot(
+            File(args.getOrElse(1) { "intro.png" }),
+            args.getOrNull(2)?.toDoubleOrNull() ?: 0.0
+        )
         return
     }
     // ./gradlew run --args="--bench [frame] [flap]"
@@ -88,6 +101,7 @@ fun main(args: Array<String>) {
     val announcer = Announcer(DesktopSpeechEngine(), JvmSoundPlayer())
     val flapClatter = FlapClatter(JvmPcmPlayer())
     val backgroundSound = BackgroundSound(JvmLoopPlayer())
+    val introPlayer = JvmSoundPlayer()
     // Anche con `java -jar`, dove i jvmArgs di Gradle non arrivano.
     System.setProperty("skiko.fps.enabled", "true")
     System.setProperty("skiko.fps.count", "200")
@@ -134,7 +148,9 @@ fun main(args: Array<String>) {
                 },
             ) {
                 AppTheme {
-                    LiveBoard(state, now = rememberNow())
+                    IntroHost(state, introPlayer, onFinished = {}) {
+                        LiveBoard(state, now = rememberNow())
+                    }
                 }
             }
         }
@@ -193,6 +209,62 @@ private fun snapshot(out: File, seconds: Double, german: Boolean, style: BoardSt
     }
     ticker.longValue = tickerMillis(target)
     val image = scene.render(target)
+    out.writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
+    scene.close()
+    println("Saved ${out.absolutePath}")
+}
+
+/**
+ * Fotogramma dell'intro a [seconds] secondi, con il tabellone dei dati di esempio al posto di
+ * quello live: serve a confrontarla con il video da cui è ispirata.
+ */
+private fun introSnapshot(out: File, seconds: Double) {
+    val millis = (seconds * 1000).toLong()
+    val ticker = mutableLongStateOf(0L)
+    val info = IntroInfo(
+        station = Station("1728", "Milano Centrale"),
+        departures = SampleDepartures.rows,
+        notices = SampleDepartures.footer.messages,
+        config = listOf(
+            "ANNUNCI_VOCALI" to "TRUE",
+            "SOTTOFONDO" to "TRUE",
+            "STILE_TABELLONE" to "LED",
+            "SCORRIMENTO_AUTO" to "TRUE",
+            "MODALITA_RISPARMIO" to "FALSE",
+            "TAVOLOZZA_OLED" to "FALSE",
+            "AGGIORNAMENTO" to "30S",
+            "FORNITORE" to "RFI",
+            "STAZIONE_ID" to "1728",
+        ),
+        startMillisOfDay = (7L * 60 + 3) * 60_000,
+    )
+    val scene = ImageComposeScene(width = 1920, height = 1080, density = Density(1.2f)) {
+        CompositionLocalProvider(LocalLedTicker provides ticker) {
+            AppTheme {
+                Box(Modifier.fillMaxSize()) {
+                    Box(
+                        Modifier.fillMaxSize().introBoardLayer({ millis }, { 0f }, { true })
+                            .background(Color(0xFF1C1E24)),
+                    ) {
+                        DepartureBoard(
+                            departures = SampleDepartures.rows,
+                            footer = SampleDepartures.footer,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    IntroOverlay(millis = { millis }, info = info)
+                }
+            }
+        }
+    }
+    // Font e immagini si caricano nei primi frame.
+    var t = 0L
+    repeat(30) {
+        ticker.longValue = tickerMillis(t)
+        scene.render(t)
+        t += 16_000_000
+    }
+    val image = scene.render(t)
     out.writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
     scene.close()
     println("Saved ${out.absolutePath}")
