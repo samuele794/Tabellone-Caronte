@@ -34,11 +34,12 @@ internal fun bannerAmount(millis: Long): Float {
 }
 
 /**
- * "TABELLONE ATTIVATO" su una fascia scura, tra fasce diagonali verde opale (a sinistra) e rosso
- * FS (a destra), con cinque loghi FS sotto al posto delle stelle del video.
+ * "TABELLONE ATTIVATO" su una fascia blu tra due fasce diagonali gialle, come la livrea
+ * RFI, con cinque loghi FS sotto al posto delle stelle del video.
  */
 @Composable
 internal fun IntroBanner(millis: () -> Long, fonts: IntroFonts, units: IntroUnits) {
+    val colors = introColors()
     Box(
         Modifier.fillMaxSize().graphicsLayer {
             val a = bannerAmount(millis())
@@ -52,22 +53,22 @@ internal fun IntroBanner(millis: () -> Long, fonts: IntroFonts, units: IntroUnit
         ) {
             Row(
                 Modifier.fillMaxWidth().height(units * 96)
-                    .background(IntroColors.Panel.copy(alpha = 0.78f)),
+                    .background(colors.secondaryContainer.copy(alpha = 0.9f)),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Stripes(
-                    IntroColors.LogoGreen,
+                    colors.primary,
                     Modifier.weight(0.22f).fillMaxHeight().padding(vertical = units * 10)
                 )
                 Text(
                     "TABELLONE ATTIVATO",
-                    style = units.jost(fonts, 66, IntroColors.White),
+                    style = units.jost(fonts, 66, colors.onSecondaryContainer),
                     maxLines = 1,
                     overflow = TextOverflow.Clip,
                     modifier = Modifier.padding(horizontal = units * 18),
                 )
                 Stripes(
-                    IntroColors.LogoRed,
+                    colors.primary,
                     Modifier.weight(0.22f).fillMaxHeight().padding(vertical = units * 10)
                 )
             }
@@ -78,7 +79,7 @@ internal fun IntroBanner(millis: () -> Long, fonts: IntroFonts, units: IntroUnit
             ) {
                 listOf(0.7f, 0.85f, 1.25f, 0.85f, 0.7f).forEach { scale ->
                     Canvas(Modifier.size(units * (34 * scale), units * (24 * scale))) {
-                        drawFsLogo(Offset.Zero, size, IntroColors.Text)
+                        drawFsLogo(Offset.Zero, size, green = colors.logoGreen)
                     }
                 }
             }

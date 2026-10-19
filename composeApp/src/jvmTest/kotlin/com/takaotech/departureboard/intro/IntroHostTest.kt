@@ -7,6 +7,8 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.unit.Density
 import androidx.lifecycle.Lifecycle
@@ -116,6 +118,25 @@ class IntroHostTest {
         advance(50)
         assertEquals(1, finished)
         assertFalse(state.introPlaying)
+    }
+
+    @Test
+    fun `con il cruscotto il tabellone ci resta dentro anche senza intro`() {
+        state.intro = false
+        state.dashboard = true
+        advance(100)
+        assertEquals(1, finished)
+        // Il tabellone del test è trasparente: dove c'è il cruscotto, l'angolo è pieno.
+        assertTrue(cornerAlpha() > 0f)
+        state.dashboard = false
+        advance(50)
+        assertEquals(0f, cornerAlpha())
+    }
+
+    /** Opacità del pixel in alto a sinistra al prossimo frame. */
+    private fun cornerAlpha(): Float {
+        nanos += 16_000_000
+        return scene.render(nanos).use { it.toComposeImageBitmap().toPixelMap()[1, 1].alpha }
     }
 
     /** SKIP, in fondo a destra nella barra in alto (alta almeno 36 dp). */

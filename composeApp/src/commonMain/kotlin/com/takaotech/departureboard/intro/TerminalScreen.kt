@@ -62,7 +62,8 @@ internal fun TerminalScreen(
     onSkip: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier.fillMaxSize().background(IntroColors.Background)) {
+    val colors = introColors()
+    Box(modifier.fillMaxSize().background(colors.background)) {
         Column(Modifier.fillMaxSize()) {
             TopBar(millis, fonts, units, compact, onSkip)
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -71,8 +72,8 @@ internal fun TerminalScreen(
                     Modifier.align(Alignment.Center).fillMaxHeight(0.86f)
                         .aspectRatio(FsLogo.WIDTH / FsLogo.HEIGHT),
                     rows = 64,
-                    green = IntroColors.LogoGreen,
-                    red = IntroColors.LogoRed,
+                    green = colors.logoGreen,
+                    red = colors.logoRed,
                     alpha = 0.3f,
                     angle = { millis() * LOGO_DEGREES_PER_SECOND / 1000f },
                 )
@@ -115,11 +116,12 @@ private fun TopBar(
     compact: Boolean,
     onSkip: (() -> Unit)?,
 ) {
-    val style = units.mono(fonts, 15, IntroColors.HeaderText)
+    val colors = introColors()
+    val style = units.mono(fonts, 15, colors.onSecondaryContainer)
     // Mai più bassa di così: ci sta SKIP, che col dito si deve poter prendere.
     Box(
         Modifier.fillMaxWidth().height(maxOf(units * 28, TOP_BAR_MIN))
-            .background(IntroColors.Header)
+            .background(colors.secondaryContainer)
     ) {
         Row(
             Modifier.align(Alignment.CenterStart).fillMaxHeight(),
@@ -127,19 +129,20 @@ private fun TopBar(
         ) {
             Canvas(Modifier.width(units * 14).fillMaxHeight()) {
                 drawHatch(
-                    IntroColors.Background,
+                    colors.background,
                     6f
                 )
             }
             Box(
-                Modifier.padding(horizontal = units * 6).border(units * 1, IntroColors.HeaderText)
+                Modifier.padding(horizontal = units * 6)
+                    .border(units * 1, colors.onSecondaryContainer)
                     .padding(horizontal = units * 8),
             ) { Text("VISTA ▾", style = style, maxLines = 1) }
             // In verticale finirebbe sotto il titolo al centro.
             if (!compact) {
                 Box(
                     Modifier.width(units * 1.5).height(units * 22)
-                        .background(IntroColors.HeaderText)
+                        .background(colors.onSecondaryContainer)
                 )
                 Text(
                     "CONNESSIONE_STABILITA//>STDOUT>registro.txt",
@@ -150,14 +153,14 @@ private fun TopBar(
             }
         }
         Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
-            SmallLogo(units, IntroColors.HeaderText)
+            SmallLogo(units, colors.onSecondaryContainer)
             Text(
                 "TERMINALE CIRCOLAZIONE",
                 style = style,
                 maxLines = 1,
                 modifier = Modifier.padding(horizontal = units * 8),
             )
-            SmallLogo(units, IntroColors.HeaderText)
+            SmallLogo(units, colors.onSecondaryContainer)
         }
         Row(
             Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
@@ -166,7 +169,7 @@ private fun TopBar(
             Text("v1839.10.03-RFI-SCC", style = style, maxLines = 1)
             Box(
                 Modifier.padding(start = units * 12).width(units * 1.5).height(units * 22)
-                    .background(IntroColors.HeaderText)
+                    .background(colors.onSecondaryContainer)
             )
             SkipButton(millis, style, units, onSkip)
         }
@@ -177,9 +180,9 @@ private fun TopBar(
 private val TOP_BAR_MIN = 36.dp
 
 /**
- * SKIP in fondo alla barra in alto, riquadrato come "VISTA": si inverte (fondo chiaro, testo
- * verde) sotto il puntatore o il dito. Si prende tutta l'altezza della barra fino al bordo dello
- * schermo; compare dopo un attimo ([skipButtonAlpha]) e senza [onSkip] non risponde.
+ * SKIP in fondo alla barra in alto, riquadrato come "VISTA": sotto il puntatore o il dito si
+ * riempie di giallo, come un pulsante primario. Si prende tutta l'altezza della barra fino al
+ * bordo dello schermo; compare dopo un attimo ([skipButtonAlpha]) e senza [onSkip] non risponde.
  */
 @Composable
 private fun SkipButton(
@@ -188,12 +191,13 @@ private fun SkipButton(
     units: IntroUnits,
     onSkip: (() -> Unit)?
 ) {
+    val colors = introColors()
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val pressed by interaction.collectIsPressedAsState()
     val armed by remember { derivedStateOf { skipButtonAlpha(millis()) >= 1f } }
     val active = (hovered || pressed) && armed && onSkip != null
-    val content = if (active) IntroColors.Header else IntroColors.HeaderText
+    val content = if (active) colors.onPrimary else colors.onSecondaryContainer
     Box(
         Modifier.fillMaxHeight()
             .graphicsLayer { alpha = skipButtonAlpha(millis()) }
@@ -209,8 +213,8 @@ private fun SkipButton(
         contentAlignment = Alignment.Center,
     ) {
         Row(
-            Modifier.background(if (active) IntroColors.HeaderText else Color.Transparent)
-                .border(units * 1, IntroColors.HeaderText)
+            Modifier.background(if (active) colors.primary else Color.Transparent)
+                .border(units * 1, if (active) colors.primary else colors.onSecondaryContainer)
                 .padding(horizontal = units * 8),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -246,6 +250,7 @@ private fun Console(
     units: IntroUnits,
     modifier: Modifier,
 ) {
+    val colors = introColors()
     val script = remember(info.station, info.decoy) { consoleScript(info.station, info.decoy) }
     val lines by remember(script) { derivedStateOf { consoleAt(millis(), script) } }
     val cursorOn by remember { derivedStateOf { millis() / 450 % 2 == 0L } }
@@ -270,7 +275,7 @@ private fun Console(
         Column(
             Modifier.drawBehind {
                 drawLine(
-                    IntroColors.Line,
+                    colors.outlineVariant,
                     Offset(-units.px(10), 0f),
                     Offset(-units.px(10), size.height),
                     strokeWidth = units.px(2),
@@ -280,10 +285,10 @@ private fun Console(
             visible.forEachIndexed { i, line ->
                 if (line.gap && i > 0) Spacer(Modifier.height(units * (textSize * 0.75f)))
                 val color = when (line.kind) {
-                    LineKind.Command -> IntroColors.TextBright
-                    LineKind.Output -> IntroColors.Text
-                    LineKind.Error -> IntroColors.ErrorBright
-                    LineKind.Net -> IntroColors.Text
+                    LineKind.Command -> colors.primary
+                    LineKind.Output -> colors.text
+                    LineKind.Error -> colors.errorText
+                    LineKind.Net -> colors.secondary
                 }
                 val cursor = i == visible.lastIndex && line.kind == LineKind.Command && cursorOn
                 Text(
@@ -326,8 +331,9 @@ private fun LogPanel(
     units: IntroUnits,
     modifier: Modifier,
 ) {
+    val colors = introColors()
     val step by remember { derivedStateOf { millis() / LOG_STEP } }
-    val style = units.mono(fonts, 12.5f, IntroColors.Text)
+    val style = units.mono(fonts, 12.5f, colors.textDim)
     PanelFrame("REGISTRO", fonts, units, modifier) {
         BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().padding(units * 6)) {
             val lineHeight = units.px(12.5f * 1.25f)
@@ -362,16 +368,17 @@ internal fun PanelFrame(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    val colors = introColors()
     Column(modifier) {
         Box(
-            Modifier.background(IntroColors.Header)
+            Modifier.background(colors.secondaryContainer)
                 .padding(horizontal = units * 6, vertical = units * 1)
         ) {
-            Text(title, style = units.mono(fonts, 15, IntroColors.HeaderText), maxLines = 1)
+            Text(title, style = units.mono(fonts, 15, colors.onSecondaryContainer), maxLines = 1)
         }
         Box(
-            Modifier.weight(1f).fillMaxWidth().background(IntroColors.Panel.copy(alpha = 0.55f))
-                .border(units * 1.5, IntroColors.Line),
+            Modifier.weight(1f).fillMaxWidth().background(colors.panel.copy(alpha = 0.55f))
+                .border(units * 1.5, colors.outlineVariant),
         ) { content() }
     }
 }
@@ -397,10 +404,11 @@ private fun SystemPanel(
     compact: Boolean,
     modifier: Modifier,
 ) {
+    val colors = introColors()
     val percents by remember {
         derivedStateOf { systemValues(millis()).map { (it * 100).toInt() } }
     }
-    val style = units.mono(fonts, 17, IntroColors.Text)
+    val style = units.mono(fonts, 17, colors.text)
     PanelFrame("SISTEMA", fonts, units, modifier) {
         Row(Modifier.fillMaxSize().padding(horizontal = units * 10, vertical = units * 8)) {
             Column(
@@ -417,8 +425,8 @@ private fun SystemPanel(
                         )
                         Canvas(Modifier.weight(1f).height(units * 16)) {
                             val value = systemValues(millis())[i]
-                            drawHatch(IntroColors.BarTrack, units.px(5))
-                            drawRect(IntroColors.Bar, size = Size(size.width * value, size.height))
+                            drawHatch(colors.secondaryContainer, units.px(5))
+                            drawRect(colors.primary, size = Size(size.width * value, size.height))
                         }
                         Text(
                             "${percents[i]}%",
@@ -435,9 +443,9 @@ private fun SystemPanel(
                     Text("TRAFFICO IN TEMPO REALE", style = style, maxLines = 1)
                     Box(
                         Modifier.weight(1f).fillMaxWidth().padding(top = units * 4)
-                            .border(units * 1.5, IntroColors.Line).padding(units * 6),
+                            .border(units * 1.5, colors.outlineVariant).padding(units * 6),
                     ) {
-                        Canvas(Modifier.fillMaxSize()) { drawTraffic(millis()) }
+                        Canvas(Modifier.fillMaxSize()) { drawTraffic(millis(), colors.secondary) }
                     }
                 }
             }
@@ -446,7 +454,7 @@ private fun SystemPanel(
 }
 
 /** Istogramma che scorre a sinistra di una colonna ogni 110 ms. */
-private fun DrawScope.drawTraffic(millis: Long) {
+private fun DrawScope.drawTraffic(millis: Long, color: Color) {
     val columns = 56
     val step = millis / 110
     val w = size.width / columns
@@ -455,7 +463,7 @@ private fun DrawScope.drawTraffic(millis: Long) {
         val spike = if (hash01(21, k) > 0.82f) 0.35f else 0f
         val v = (0.2f + 0.55f * noise(22, k * 0.45f) + spike).coerceAtMost(1f)
         val h = size.height * v
-        drawRect(IntroColors.Bar, Offset(i * w, size.height - h), Size(w * 0.86f, h))
+        drawRect(color, Offset(i * w, size.height - h), Size(w * 0.86f, h))
     }
 }
 
@@ -477,7 +485,8 @@ internal fun DrawScope.drawHatch(color: Color, spacing: Float, stroke: Float = s
 
 @Composable
 private fun ConfigPanel(info: IntroInfo, fonts: IntroFonts, units: IntroUnits, modifier: Modifier) {
-    val style = units.mono(fonts, 12.5f, IntroColors.Text)
+    val colors = introColors()
+    val style = units.mono(fonts, 12.5f, colors.textDim)
     PanelFrame("CONFIG", fonts, units, modifier) {
         Column(Modifier.fillMaxSize().clipToBounds().padding(units * 8)) {
             info.config.forEach { (key, value) ->
@@ -501,8 +510,9 @@ private fun Footer(
     units: IntroUnits,
     sizePx: IntSize
 ) {
+    val colors = introColors()
     val step by remember { derivedStateOf { millis() / 250 } }
-    val style: TextStyle = units.mono(fonts, 12.5f, IntroColors.Text)
+    val style: TextStyle = units.mono(fonts, 12.5f, colors.textDim)
     val date = info.date.toString().replace("-", "")
     Box(Modifier.fillMaxWidth().height(units * 24).padding(horizontal = units * 10)) {
         Text(

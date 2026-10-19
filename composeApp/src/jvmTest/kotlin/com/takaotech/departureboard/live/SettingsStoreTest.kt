@@ -177,6 +177,27 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun `intro e cruscotto sopravvivono alla riapertura`() = runBlocking {
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            state.restoreSettings()
+            state.intro = false
+            state.dashboard = true
+            store.awaitSaved(
+                BoardSettings(Selection(StationSource.Rfi, milano), intro = false, dashboard = true)
+            )
+        }
+
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store)
+            assertFalse(state.dashboard)
+            state.restoreSettings()
+            assertFalse(state.intro)
+            assertTrue(state.dashboard)
+        }
+    }
+
+    @Test
     fun `aspetto e suono delle palette sopravvivono alla riapertura`() = runBlocking {
         SettingsStore(path).use { store ->
             val state = LiveBoardState(sources, settingsStore = store)

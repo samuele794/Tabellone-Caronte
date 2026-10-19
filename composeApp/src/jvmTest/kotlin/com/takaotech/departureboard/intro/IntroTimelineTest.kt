@@ -168,6 +168,8 @@ class IntroTimelineTest {
             info.nextDeparture(600_000)!!.let { it.first.number to it.second })
         assertEquals("23:50:00", info.clockAt(0))
         assertEquals("00:00:01", info.clockAt(601_000))
+        assertEquals(info.date, info.dateAt(0))
+        assertEquals(kotlinx.datetime.LocalDate(2026, 1, 2), info.dateAt(601_000))
         assertNull(IntroInfo(station).nextDeparture(0))
     }
 

@@ -103,6 +103,7 @@ internal fun DashboardScreen(
     zoom: () -> Float,
     modifier: Modifier = Modifier,
 ) {
+    val colors = introColors()
     val g = geometry
     Box(modifier.fillMaxSize()) {
         // Fondo con il buco dove si vede il tabellone, e la cornice del buco.
@@ -110,10 +111,10 @@ internal fun DashboardScreen(
             val z = zoom()
             val hole = g.boardRect(z)
             clipRect(hole.left, hole.top, hole.right, hole.bottom, ClipOp.Difference) {
-                drawRect(IntroColors.DashBackground, alpha = 1f - z)
-                drawGrid(units.px(40), alpha = 0.5f * (1f - z))
+                drawRect(colors.surface, alpha = 1f - z)
+                drawGrid(colors.outlineVariant, units.px(40), alpha = 0.5f * (1f - z))
             }
-            drawFrame(hole, units.px(1.5f), units.px(14), alpha = 1f - z)
+            drawFrame(colors.primary, hole, units.px(1.5f), units.px(14), alpha = 1f - z)
         }
         // Intestazione sopra il tabellone.
         Placed(
@@ -175,23 +176,28 @@ private fun Placed(rect: Rect, modifier: Modifier = Modifier, content: @Composab
     }
 }
 
-private fun DrawScope.drawGrid(step: Float, alpha: Float) {
+private fun DrawScope.drawGrid(color: Color, step: Float, alpha: Float) {
     var x = step
     while (x < size.width) {
-        drawLine(IntroColors.Line, Offset(x, 0f), Offset(x, size.height), 1f, alpha = alpha * 0.25f)
+        drawLine(color, Offset(x, 0f), Offset(x, size.height), 1f, alpha = alpha * 0.25f)
         x += step
     }
     var y = step
     while (y < size.height) {
-        drawLine(IntroColors.Line, Offset(0f, y), Offset(size.width, y), 1f, alpha = alpha * 0.25f)
+        drawLine(color, Offset(0f, y), Offset(size.width, y), 1f, alpha = alpha * 0.25f)
         y += step
     }
 }
 
 /** Cornice sottile attorno a [rect] con gli angoli marcati. */
-private fun DrawScope.drawFrame(rect: Rect, stroke: Float, corner: Float, alpha: Float) {
+private fun DrawScope.drawFrame(
+    color: Color,
+    rect: Rect,
+    stroke: Float,
+    corner: Float,
+    alpha: Float
+) {
     if (alpha <= 0f) return
-    val color = IntroColors.Text
     drawRect(color, rect.topLeft, rect.size, alpha = alpha * 0.5f, style = Stroke(stroke))
     val w = stroke * 2.5f
     for ((p, dx, dy) in listOf(
@@ -205,48 +211,53 @@ private fun DrawScope.drawFrame(rect: Rect, stroke: Float, corner: Float, alpha:
 
 @Composable
 private fun Header(millis: () -> Long, info: IntroInfo, fonts: IntroFonts, units: IntroUnits) {
+    val colors = introColors()
     val second by remember { derivedStateOf { millis() / 1000 } }
     Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(
                 info.station.name.uppercase(),
-                style = units.jost(fonts, 38, IntroColors.Bar),
+                style = units.jost(fonts, 38, colors.primary),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 "${info.modeLabel} / COD - ${info.station.id} / ${info.clockAt(second * 1000)}",
-                style = units.mono(fonts, 14, IntroColors.TextBright),
+                style = units.mono(fonts, 14, colors.textDim),
                 maxLines = 1,
             )
             Canvas(
                 Modifier.width(units * 260).height(units * 7).padding(top = units * 2)
-            ) { drawBarcode() }
+            ) { drawBarcode(colors.textDim) }
         }
         Column(horizontalAlignment = Alignment.End) {
-            val style = units.mono(fonts, 12, IntroColors.TextBright)
+            val style = units.mono(fonts, 12, colors.textDim)
             Text(
                 "${info.sourceLabel} / ${info.modeLabel} / ${promptName(info.station)}",
                 style = style,
                 maxLines = 1
             )
             Text("TABELLONE / IN LINEA / SCC", style = style, maxLines = 1)
-            Text("${info.date} ${info.clockAt(second * 1000)}", style = style, maxLines = 1)
+            Text(
+                "${info.dateAt(second * 1000)} ${info.clockAt(second * 1000)}",
+                style = style,
+                maxLines = 1
+            )
         }
         Canvas(Modifier.padding(start = units * 12).size(units * 64, units * 46)) {
-            drawFsLogo(Offset.Zero, size, IntroColors.TextBright)
+            drawFsLogo(Offset.Zero, size, colors.text)
         }
     }
 }
 
 /** Codice a barre decorativo sotto il nome della stazione. */
-private fun DrawScope.drawBarcode() {
+private fun DrawScope.drawBarcode(color: Color) {
     var x = 0f
     var i = 0L
     val unit = size.height * 0.45f
     while (x < size.width) {
         val w = unit * (1 + (hash01(31, i) * 3).toInt())
-        if (i % 2 == 0L) drawRect(IntroColors.TextBright, Offset(x, 0f), Size(w, size.height))
+        if (i % 2 == 0L) drawRect(color, Offset(x, 0f), Size(w, size.height))
         x += w + unit
         i++
     }
@@ -254,11 +265,12 @@ private fun DrawScope.drawBarcode() {
 
 @Composable
 private fun BottomBand(millis: () -> Long, info: IntroInfo, fonts: IntroFonts, units: IntroUnits) {
+    val colors = introColors()
     val minute by remember { derivedStateOf { millis() / 10_000 } }
     val next = remember(info.departures, minute) { info.nextDeparture(minute * 10_000) }
     Row(
-        Modifier.fillMaxSize().background(IntroColors.Tile)
-            .border(units * 1.5, IntroColors.Signal.copy(alpha = 0.7f)),
+        Modifier.fillMaxSize().background(colors.tile)
+            .border(units * 1.5, colors.primary.copy(alpha = 0.7f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         HazardBlock(units, Modifier.fillMaxHeight().aspectRatio(1.3f))
@@ -267,9 +279,9 @@ private fun BottomBand(millis: () -> Long, info: IntroInfo, fonts: IntroFonts, u
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Text("PROSSIMA PARTENZA", style = units.jost(fonts, 30), maxLines = 1)
+            Text("PROSSIMA PARTENZA", style = units.jost(fonts, 30, colors.text), maxLines = 1)
             Box(
-                Modifier.padding(top = units * 6).border(units * 1, IntroColors.TextDim)
+                Modifier.padding(top = units * 6).border(units * 1, colors.outline)
                     .padding(horizontal = units * 22, vertical = units * 4),
             ) {
                 val text =
@@ -277,7 +289,7 @@ private fun BottomBand(millis: () -> Long, info: IntroInfo, fonts: IntroFonts, u
                         ?: "IN ATTESA DEI DATI"
                 Text(
                     text.uppercase(),
-                    style = units.jost(fonts, 20, IntroColors.Signal),
+                    style = units.jost(fonts, 20, colors.primary),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -290,10 +302,11 @@ private fun BottomBand(millis: () -> Long, info: IntroInfo, fonts: IntroFonts, u
 /** Blocco a strisce gialle e nere, come le barriere dei passaggi a livello. */
 @Composable
 private fun HazardBlock(units: IntroUnits, modifier: Modifier) {
+    val colors = introColors()
     Canvas(modifier.padding(units * 8)) {
-        drawRect(Color.Black)
-        drawHatch(IntroColors.Signal, size.height / 3.2f, size.height / 6.4f)
-        drawRect(IntroColors.Signal, style = Stroke(units.px(1.5f)))
+        drawRect(colors.background)
+        drawHatch(colors.primary, size.height / 3.2f, size.height / 6.4f)
+        drawRect(colors.primary, style = Stroke(units.px(1.5f)))
     }
 }
 
@@ -305,20 +318,21 @@ private fun LeftColumn(
     units: IntroUnits,
     g: DashboardGeometry,
 ) {
+    val colors = introColors()
     val gap = with(LocalDensity.current) { g.margin.toDp() }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
         // 1. Logo FS e sala.
         Box(
             Modifier.weight(1f).fillMaxWidth()
-                .background(Brush.verticalGradient(listOf(Color(0xFF3A444A), Color(0xFF1C2226))))
-                .border(units * 1.5, Color(0xFF6A757C))
+                .background(Brush.verticalGradient(listOf(colors.tileHigh, colors.panel)))
+                .border(units * 1.5, colors.outline)
                 .padding(units * 8),
         ) {
             DotMatrixLogo(
                 Modifier.align(Alignment.TopCenter).fillMaxWidth(0.62f).fillMaxHeight(0.6f),
                 rows = 26,
-                green = Color(0xFFE6ECEE),
-                red = IntroColors.LogoRed,
+                green = colors.text,
+                red = colors.logoRed,
                 angle = { millis() * 0.03f },
             )
             Column(
@@ -327,34 +341,34 @@ private fun LeftColumn(
             ) {
                 Text(
                     "RFI · SALA CIRCOLAZIONE",
-                    style = units.mono(fonts, 11, IntroColors.White),
+                    style = units.mono(fonts, 11, colors.text),
                     maxLines = 1
                 )
-                Text("● ● ● ●", style = units.mono(fonts, 12, IntroColors.White), maxLines = 1)
+                Text("● ● ● ●", style = units.mono(fonts, 12, colors.text), maxLines = 1)
             }
         }
         // 2. Stazione attiva.
         Box(
-            Modifier.weight(1f).fillMaxWidth().background(IntroColors.Tile)
-                .border(units * 1.5, IntroColors.Signal.copy(alpha = 0.8f)).padding(units * 10),
+            Modifier.weight(1f).fillMaxWidth().background(colors.secondaryContainer)
+                .border(units * 1.5, colors.secondary.copy(alpha = 0.8f)).padding(units * 10),
         ) {
             Canvas(Modifier.align(Alignment.TopCenter).fillMaxWidth(0.55f).fillMaxHeight(0.42f)) {
-                drawFsLogo(Offset.Zero, size, IntroColors.White)
+                drawFsLogo(Offset.Zero, size, colors.onSecondaryContainer)
             }
             Column(Modifier.align(Alignment.BottomStart)) {
                 Text(
                     "${stationInitials(info.station)} // ATTIVO",
-                    style = units.jost(fonts, 24, IntroColors.Signal),
+                    style = units.jost(fonts, 24, colors.primary),
                     maxLines = 1,
                 )
                 Text(
                     "SCC / PIC / ACC-M",
-                    style = units.mono(fonts, 10, IntroColors.White),
+                    style = units.mono(fonts, 10, colors.onSecondaryContainer),
                     maxLines = 1
                 )
                 Text(
                     "${promptName(info.station)}_CMD//>CONNESSO",
-                    style = units.mono(fonts, 10, IntroColors.White),
+                    style = units.mono(fonts, 10, colors.onSecondaryContainer),
                     maxLines = 1,
                     overflow = TextOverflow.Clip,
                 )
@@ -362,28 +376,28 @@ private fun LeftColumn(
         }
         // 3. Schema dei binari con un treno che passa.
         Box(
-            Modifier.weight(1f).fillMaxWidth().background(Color(0xFF0C1719))
-                .border(units * 1.5, IntroColors.Line).clipToBounds(),
+            Modifier.weight(1f).fillMaxWidth().background(colors.background)
+                .border(units * 1.5, colors.outlineVariant).clipToBounds(),
         ) {
-            Canvas(Modifier.fillMaxSize()) { drawTracks(millis(), units) }
+            Canvas(Modifier.fillMaxSize()) { drawTracks(millis(), units, colors) }
             Text(
                 "SCHEMA BINARI · ${stationInitials(info.station)}",
-                style = units.mono(fonts, 11, IntroColors.TextBright),
+                style = units.mono(fonts, 11, colors.textDim),
                 maxLines = 1,
                 modifier = Modifier.padding(units * 8),
             )
         }
         // 4. Orologio di stazione.
         Box(
-            Modifier.weight(1f).fillMaxWidth().background(Color(0xFF050708))
-                .border(units * 1.5, Color(0xFF3A3F44)).padding(units * 10),
+            Modifier.weight(1f).fillMaxWidth().background(colors.background)
+                .border(units * 1.5, colors.outlineVariant).padding(units * 10),
         ) {
             Canvas(Modifier.align(Alignment.Center).fillMaxHeight(0.86f).aspectRatio(1f)) {
-                drawStationClock(info.millisOfDayAt(millis()))
+                drawStationClock(info.millisOfDayAt(millis()), colors)
             }
             Text(
                 "ORA UFFICIALE",
-                style = units.mono(fonts, 10, IntroColors.TextDim),
+                style = units.mono(fonts, 10, colors.textDim),
                 maxLines = 1,
                 modifier = Modifier.align(Alignment.BottomStart),
             )
@@ -392,18 +406,18 @@ private fun LeftColumn(
 }
 
 /** Tre binari con due comunicazioni e un treno a punti che li percorre. */
-private fun DrawScope.drawTracks(millis: Long, units: IntroUnits) {
+private fun DrawScope.drawTracks(millis: Long, units: IntroUnits, colors: IntroColors) {
     val stroke = units.px(2)
     val ys = listOf(0.42f, 0.62f, 0.82f).map { it * size.height }
-    val color = IntroColors.Line
+    val color = colors.outline
     ys.forEach { y -> drawLine(color, Offset(0f, y), Offset(size.width, y), stroke) }
     drawLine(color, Offset(size.width * 0.25f, ys[0]), Offset(size.width * 0.4f, ys[1]), stroke)
     drawLine(color, Offset(size.width * 0.6f, ys[1]), Offset(size.width * 0.75f, ys[2]), stroke)
-    // Segnali: verde sul binario del treno, rossi sugli altri.
+    // Segnali: giallo (avviso) sul binario del treno, rossi sugli altri.
     val r = units.px(3.5f)
-    drawCircle(Color(0xFF3DDC84), r, Offset(size.width * 0.9f, ys[1] - units.px(9)))
-    drawCircle(IntroColors.Error, r, Offset(size.width * 0.9f, ys[0] - units.px(9)))
-    drawCircle(IntroColors.Error, r, Offset(size.width * 0.9f, ys[2] - units.px(9)))
+    drawCircle(colors.primary, r, Offset(size.width * 0.9f, ys[1] - units.px(9)))
+    drawCircle(colors.error, r, Offset(size.width * 0.9f, ys[0] - units.px(9)))
+    drawCircle(colors.error, r, Offset(size.width * 0.9f, ys[2] - units.px(9)))
     // Treno: 5 carrozze di punti ambra, scorre da sinistra a destra in 4 s.
     val length = size.width * 0.38f
     val head = ((millis % 4_000) / 4_000f) * (size.width + length)
@@ -411,7 +425,7 @@ private fun DrawScope.drawTracks(millis: Long, units: IntroUnits) {
     for (i in 0 until 5) {
         val x = head - i * car
         drawRoundRect(
-            Color(0xFFFFA51F),
+            colors.secondary,
             Offset(x - car * 0.9f, ys[1] - units.px(4)),
             Size(car * 0.8f, units.px(8)),
             androidx.compose.ui.geometry.CornerRadius(units.px(2)),
@@ -420,18 +434,18 @@ private fun DrawScope.drawTracks(millis: Long, units: IntroUnits) {
 }
 
 /** Orologio di stazione: quadrante bianco, lancette nere, lancetta dei secondi rossa. */
-private fun DrawScope.drawStationClock(millisOfDay: Long) {
+private fun DrawScope.drawStationClock(millisOfDay: Long, colors: IntroColors) {
     val r = size.minDimension / 2
     val c = center
-    drawCircle(Color(0xFFF4F4F0), r, c)
-    drawCircle(Color(0xFF1A1A1A), r, c, style = Stroke(r * 0.04f))
+    drawCircle(colors.clockFace, r, c)
+    drawCircle(colors.clockHands, r, c, style = Stroke(r * 0.04f))
     for (i in 0 until 60) {
         val a = i * 6f
         val long = i % 5 == 0
         val from = r * if (long) 0.72f else 0.84f
         rotate(a, c) {
             drawLine(
-                Color(0xFF111111),
+                colors.clockHands,
                 Offset(c.x, c.y - r * 0.92f),
                 Offset(c.x, c.y - from),
                 if (long) r * 0.07f else r * 0.025f,
@@ -446,12 +460,12 @@ private fun DrawScope.drawStationClock(millisOfDay: Long) {
         val dir = Offset(cos(rad), sin(rad))
         drawLine(color, c - dir * (r * tail), c + dir * (r * length), width, StrokeCap.Butt)
     }
-    hand(hour * 30, 0.55f, r * 0.1f, Color(0xFF111111))
-    hand(minute * 6, 0.82f, r * 0.075f, Color(0xFF111111))
+    hand(hour * 30, 0.55f, r * 0.1f, colors.clockHands)
+    hand(minute * 6, 0.82f, r * 0.075f, colors.clockHands)
     val sec = (seconds % 60) * 6
-    hand(sec, 0.62f, r * 0.025f, IntroColors.Error, tail = 0.28f)
+    hand(sec, 0.62f, r * 0.025f, colors.error, tail = 0.28f)
     val rad = (sec - 90) * PI.toFloat() / 180
-    drawCircle(IntroColors.Error, r * 0.08f, c + Offset(cos(rad), sin(rad)) * (r * 0.62f))
+    drawCircle(colors.error, r * 0.08f, c + Offset(cos(rad), sin(rad)) * (r * 0.62f))
 }
 
 @Composable
@@ -462,19 +476,20 @@ private fun RightColumn(
     units: IntroUnits,
     g: DashboardGeometry,
 ) {
+    val colors = introColors()
     val gap = with(LocalDensity.current) { g.margin.toDp() }
     val second by remember { derivedStateOf { millis() / 1000 } }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
         // 1. Conto alla rovescia al prossimo treno.
-        Column(Modifier.weight(1.15f).fillMaxWidth().border(units * 2, IntroColors.Signal)) {
+        Column(Modifier.weight(1.15f).fillMaxWidth().border(units * 2, colors.primary)) {
             Box(
-                Modifier.fillMaxWidth().background(IntroColors.Signal)
+                Modifier.fillMaxWidth().background(colors.primary)
                     .padding(vertical = units * 3),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     "PROSSIMO TRENO TRA",
-                    style = units.mono(fonts, 13, Color(0xFF2A2000)),
+                    style = units.mono(fonts, 13, colors.onPrimary),
                     maxLines = 1
                 )
             }
@@ -487,17 +502,17 @@ private fun RightColumn(
                         .padStart(2, '0')
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text(big, style = units.jost(fonts, 64), maxLines = 1)
+                    Text(big, style = units.jost(fonts, 64, colors.text), maxLines = 1)
                     Text(
                         small,
-                        style = units.jost(fonts, 40, Color(0xFFB8BCBF)),
+                        style = units.jost(fonts, 40, colors.textDim),
                         maxLines = 1,
                         modifier = Modifier.padding(bottom = units * 6),
                     )
                 }
             }
             Canvas(Modifier.fillMaxWidth().height(units * 12)) {
-                drawHatch(IntroColors.Signal, size.height * 1.2f, size.height * 0.5f)
+                drawHatch(colors.primary, size.height * 1.2f, size.height * 0.5f)
             }
         }
         // 2. Verifica dei circuiti di binario, che si accendono uno alla volta.
@@ -510,11 +525,11 @@ private fun RightColumn(
                 ) * 100).toInt()
             }
         }
-        Panel(Modifier.weight(1f), units, Color(0xFF3BA55C)) {
+        Panel(Modifier.weight(1f), units, colors.outline) {
             PanelTitle("CIRCUITI DI BINARIO", fonts, units)
             Text(
                 "VERIFICA $check%",
-                style = units.mono(fonts, 11, IntroColors.TextDim),
+                style = units.mono(fonts, 11, colors.textDim),
                 maxLines = 1
             )
             Row(
@@ -528,12 +543,12 @@ private fun RightColumn(
                         Box(
                             Modifier.align(Alignment.Center).aspectRatio(1f)
                                 .background(
-                                    if (lit) Color(0xFF3BA55C).copy(alpha = 0.35f) else Color.Transparent,
+                                    if (lit) colors.secondaryContainer else Color.Transparent,
                                     RoundedCornerShape(units * 6),
                                 )
                                 .border(
                                     units * 2,
-                                    if (lit) Color(0xFF6FE08F) else Color(0xFF3A3F44),
+                                    if (lit) colors.secondary else colors.outlineVariant,
                                     RoundedCornerShape(units * 6),
                                 ),
                         )
@@ -542,41 +557,42 @@ private fun RightColumn(
             }
         }
         // 3. Disposizioni di servizio.
-        Panel(Modifier.weight(1f), units, Color(0xFF8A9096)) {
+        Panel(Modifier.weight(1f), units, colors.outline) {
             PanelTitle("DISPOSIZIONE DI SERVIZIO", fonts, units)
-            Text("IN ATTESA", style = units.mono(fonts, 11, IntroColors.TextDim), maxLines = 1)
+            Text("IN ATTESA", style = units.mono(fonts, 11, colors.textDim), maxLines = 1)
             Box(
                 Modifier.fillMaxWidth().weight(1f).padding(top = units * 6)
-                    .border(units * 1, Color(0xFF3A3F44)),
+                    .border(units * 1, colors.outlineVariant),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     "NESSUNA DISPOSIZIONE ATTIVA",
-                    style = units.mono(fonts, 13, IntroColors.White),
+                    style = units.mono(fonts, 13, colors.text),
                     maxLines = 1,
                     textAlign = TextAlign.Center,
                 )
             }
         }
         // 4. Avvisi ai viaggiatori.
-        Panel(Modifier.weight(1.1f), units, IntroColors.Bar) {
-            PanelTitle("AVVISI AI VIAGGIATORI", fonts, units)
+        // Contenitore secondario, come una card tonale: informazione, non allarme.
+        Panel(Modifier.weight(1.1f), units, colors.secondary, colors.secondaryContainer) {
+            PanelTitle("AVVISI AI VIAGGIATORI", fonts, units, colors.onSecondaryContainer)
             Text(
                 (info.notices.firstOrNull() ?: "NESSUN AVVISO IN CORSO").uppercase(),
-                style = units.mono(fonts, 11, IntroColors.TextDim),
+                style = units.mono(fonts, 11, colors.onSecondaryContainer),
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(top = units * 4),
             )
             Text(
                 "◉ RFI.IT/INFOMOBILITA",
-                style = units.mono(fonts, 13, IntroColors.Bar),
+                style = units.mono(fonts, 13, colors.primary),
                 maxLines = 1
             )
             Spacer(Modifier.height(units * 2))
             Text(
                 "MESSAGGIO DIFFUSO DALLA SALA CIRCOLAZIONE",
-                style = units.mono(fonts, 8, IntroColors.TextDim),
+                style = units.mono(fonts, 8, colors.onSecondaryContainer),
                 maxLines = 1,
             )
         }
@@ -585,8 +601,13 @@ private fun RightColumn(
 
 /** Titolo dei pannelli di destra: su due righe se la colonna è stretta. */
 @Composable
-private fun PanelTitle(text: String, fonts: IntroFonts, units: IntroUnits) {
-    Text(text, style = units.jost(fonts, 16), maxLines = 2, overflow = TextOverflow.Ellipsis)
+private fun PanelTitle(
+    text: String,
+    fonts: IntroFonts,
+    units: IntroUnits,
+    color: Color = introColors().text,
+) {
+    Text(text, style = units.jost(fonts, 16, color), maxLines = 2, overflow = TextOverflow.Ellipsis)
 }
 
 @Composable
@@ -594,10 +615,11 @@ private fun Panel(
     modifier: Modifier,
     units: IntroUnits,
     border: Color,
+    background: Color = introColors().tile,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     Column(
-        modifier.fillMaxWidth().background(IntroColors.Tile).border(units * 1.5, border)
+        modifier.fillMaxWidth().background(background).border(units * 1.5, border)
             .padding(units * 10),
         content = content,
     )

@@ -33,6 +33,9 @@ internal object FsLogo {
     val Green = Color(0xFF006564)
     val Red = Color(0xFFDC062B)
 
+    /** Verde del marchio schiarito, per i punti accesi del logo su fondo scuro. */
+    val LightGreen = Color(0xFF2E9C96)
+
     private const val GREEN_PATH =
         "m572.07 48.355c-162.74 1.4249-189.83 28.104-226.68 95.219l180.05 0.0822zm8.2112-19.72 " +
                 "9.7274-19.025h-266.89c-90.497 0-136.67 30.808-164.75 87.894-21.967 44.646-21.903 " +
@@ -53,20 +56,21 @@ internal object FsLogo {
 
 /**
  * Disegna il logo FS pieno nel riquadro [topLeft]–[size], centrato e in proporzione; con
- * [tint] tutto di quel colore, altrimenti verde e rosso originali.
+ * [tint] tutto di quel colore, altrimenti [green] e rosso del marchio.
  */
 internal fun DrawScope.drawFsLogo(
     topLeft: Offset,
     size: Size,
     tint: Color? = null,
     alpha: Float = 1f,
+    green: Color = FsLogo.Green,
 ) {
     val s = min(size.width / FsLogo.WIDTH, size.height / FsLogo.HEIGHT)
     val dx = topLeft.x + (size.width - FsLogo.WIDTH * s) / 2
     val dy = topLeft.y + (size.height - FsLogo.HEIGHT * s) / 2
     translate(dx, dy) {
         scale(s, s, pivot = Offset.Zero) {
-            drawPath(FsLogo.green, tint ?: FsLogo.Green, alpha = alpha)
+            drawPath(FsLogo.green, tint ?: green, alpha = alpha)
             drawPath(FsLogo.red, tint ?: FsLogo.Red, alpha = alpha)
         }
     }

@@ -66,6 +66,8 @@ data class BoardSettings(
     val backgroundVolume: Int = 50,
     /** Intro "terminale circolazione" a ogni avvio. */
     val intro: Boolean = true,
+    /** Tabellone dentro il cruscotto dell'intro anche dopo, invece che a tutto schermo. */
+    val dashboard: Boolean = false,
 )
 
 /**

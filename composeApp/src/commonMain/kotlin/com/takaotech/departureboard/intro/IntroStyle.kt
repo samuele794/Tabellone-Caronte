@@ -1,6 +1,9 @@
 package com.takaotech.departureboard.intro
 
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -17,28 +20,50 @@ import org.jetbrains.compose.resources.Font
 import kotlin.math.floor
 
 /**
- * Colori dell'intro: il verde opale del logo FS al posto del ciano del terminale del video,
- * il rosso FS per errori e timeout, il giallo segnale (RAL 1003) del cruscotto.
+ * Colori dell'intro, assegnati con i ruoli Material 3 dello schema dell'app
+ * ([com.takaotech.departureboard.AppTheme]):
+ * - primario (giallo segnale) per gli elementi chiave: comandi battuti, indicatori, il tabellone
+ *   e il suo conto alla rovescia, l'azione SKIP;
+ * - secondario (blu oltremare) per gli elementi di supporto: barre e etichette del terminale
+ *   come contenitori, righe di rete, traffico, stati selezionati, avvisi;
+ * - superfici e contenitori per fondi e pannelli, on-surface per i testi, outline per i bordi;
+ * - errore (rosso) per errori, timeout e segnali a via impedita.
+ * Il logo FS a colori resta nei colori del marchio, che non dipendono dal tema.
  */
-internal object IntroColors {
-    val Background = Color(0xFF04100F)
-    val Panel = Color(0xFF061816)
-    val Text = Color(0xFF98D1CE)
-    val TextBright = Color(0xFFD4F5F2)
-    val TextDim = Color(0xFF5C9894)
-    val Line = Color(0xFF2A6462)
-    val Bar = Color(0xFF4FB8B1)
-    val BarTrack = Color(0xFF123634)
-    val Header = Color(0xFF2A6462)
-    val HeaderText = Color(0xFFE6FFFC)
-    val Error = Color(0xFFDC062B)
-    val ErrorBright = Color(0xFFFF4A5F)
-    val LogoGreen = Color(0xFF2E9C96)
-    val LogoRed = Color(0xFFDC062B)
-    val Signal = Color(0xFFFEB50C)
-    val DashBackground = Color(0xFF0B0E10)
-    val Tile = Color(0xFF14191C)
-    val White = Color(0xFFF1F1EE)
+@Immutable
+internal class IntroColors(scheme: ColorScheme) {
+    val background = scheme.surfaceContainerLowest
+    val surface = scheme.surface
+    val panel = scheme.surfaceContainerLow
+    val tile = scheme.surfaceContainer
+    val tileHigh = scheme.surfaceContainerHighest
+    val text = scheme.onSurface
+    val textDim = scheme.onSurfaceVariant
+    val outline = scheme.outline
+    val outlineVariant = scheme.outlineVariant
+    val primary = scheme.primary
+    val onPrimary = scheme.onPrimary
+    val secondary = scheme.secondary
+    val secondaryContainer = scheme.secondaryContainer
+    val onSecondaryContainer = scheme.onSecondaryContainer
+
+    /** Rosso pieno: luci dei segnali, lancetta dei secondi. */
+    val error = scheme.errorContainer
+
+    /** Rosso leggibile come testo su fondo scuro. */
+    val errorText = scheme.error
+    val clockFace = scheme.inverseSurface
+    val clockHands = scheme.surfaceContainerLowest
+    val scrim = scheme.scrim
+    val logoGreen = FsLogo.LightGreen
+    val logoRed = FsLogo.Red
+}
+
+/** [IntroColors] del tema corrente. */
+@Composable
+internal fun introColors(): IntroColors {
+    val scheme = MaterialTheme.colorScheme
+    return remember(scheme) { IntroColors(scheme) }
 }
 
 /** Font dell'intro: Share Tech Mono per il terminale, Jost per i titoli del cruscotto. */
@@ -66,14 +91,14 @@ internal class IntroUnits(val u: Dp, private val density: Density) {
 
     fun px(value: Number): Float = with(density) { (u * value.toFloat()).toPx() }
 
-    fun mono(fonts: IntroFonts, size: Number, color: Color = IntroColors.Text) = TextStyle(
+    fun mono(fonts: IntroFonts, size: Number, color: Color) = TextStyle(
         fontFamily = fonts.mono,
         fontSize = sp(size),
         lineHeight = sp(size.toFloat() * 1.25f),
         color = color,
     )
 
-    fun jost(fonts: IntroFonts, size: Number, color: Color = IntroColors.White) = TextStyle(
+    fun jost(fonts: IntroFonts, size: Number, color: Color) = TextStyle(
         fontFamily = fonts.jost,
         fontWeight = FontWeight.SemiBold,
         fontSize = sp(size),

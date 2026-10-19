@@ -163,6 +163,7 @@ class LiveBoardState(
     private var backgroundState by mutableStateOf(true)
     private var backgroundVolumeState by mutableIntStateOf(DEFAULT_BACKGROUND_VOLUME)
     private var introState by mutableStateOf(true)
+    private var dashboardState by mutableStateOf(false)
 
     init {
         backgroundSound?.volume = DEFAULT_BACKGROUND_VOLUME / 100f
@@ -181,7 +182,7 @@ class LiveBoardState(
     private enum class Setting {
         Selection, AutoScroll, Announce, Refresh, ListRefresh, EcoMode, ScreenOnOnlyWhenCharging, OledPalette,
         BoardStyle, FlapSound, FlapVolume, FlapPagePause, AnnounceBlink, AnnounceVolume,
-        Background, BackgroundVolume, Intro,
+        Background, BackgroundVolume, Intro, Dashboard,
     }
 
     /** Intervalli di aggiornamento scelti, per fornitore; chi manca usa [DEFAULT_REFRESH]. */
@@ -384,6 +385,17 @@ class LiveBoardState(
             changed(Setting.Intro)
         }
 
+    /**
+     * Il tabellone resta nel cruscotto dell'intro (intestazione, colonne laterali, fascia della
+     * prossima partenza) invece di andare a tutto schermo; vale anche senza intro.
+     */
+    var dashboard: Boolean
+        get() = dashboardState
+        set(value) {
+            dashboardState = value
+            changed(Setting.Dashboard)
+        }
+
     private var introPlayingState by mutableStateOf(false)
 
     /**
@@ -544,6 +556,7 @@ class LiveBoardState(
             applyBackgroundVolume(saved.backgroundVolume)
         }
         if (Setting.Intro !in changedBeforeRestore) introState = saved.intro
+        if (Setting.Dashboard !in changedBeforeRestore) dashboardState = saved.dashboard
         if (Setting.AnnounceBlink !in changedBeforeRestore) {
             announceBlinkState =
                 saved.announceBlinkSeconds.seconds.nearestOf(ANNOUNCE_BLINK_OPTIONS)
@@ -587,6 +600,7 @@ class LiveBoardState(
                 background = background,
                 backgroundVolume = backgroundVolume,
                 intro = intro,
+                dashboard = dashboard,
             )
         )
     }
@@ -1060,6 +1074,7 @@ private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDism
                     )
                 }
                 SwitchRow("Intro all'avvio", state.intro) { state.intro = it }
+                SwitchRow("Tabellone nel cruscotto", state.dashboard) { state.dashboard = it }
                 Text("Risparmio energetico", style = MaterialTheme.typography.titleSmall)
                 SwitchRow("Modalità risparmio", state.ecoMode) { state.ecoMode = it }
                 SwitchRow("Fondo nero (schermi OLED)", state.oledPalette) { state.oledPalette = it }

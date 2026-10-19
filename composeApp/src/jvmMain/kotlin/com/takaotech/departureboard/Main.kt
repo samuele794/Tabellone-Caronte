@@ -64,11 +64,12 @@ fun main(args: Array<String>) {
         snapshot(out, seconds, german, style(args))
         return
     }
-    // ./gradlew run --args="--intro-snapshot intro.png [secondi]"
+    // ./gradlew run --args="--intro-snapshot intro.png [secondi] [cruscotto]"
     if (args.firstOrNull() == "--intro-snapshot") {
         introSnapshot(
             File(args.getOrElse(1) { "intro.png" }),
-            args.getOrNull(2)?.toDoubleOrNull() ?: 0.0
+            args.getOrNull(2)?.toDoubleOrNull() ?: 0.0,
+            keepDashboard = "cruscotto" in args.drop(3),
         )
         return
     }
@@ -216,9 +217,10 @@ private fun snapshot(out: File, seconds: Double, german: Boolean, style: BoardSt
 
 /**
  * Fotogramma dell'intro a [seconds] secondi, con il tabellone dei dati di esempio al posto di
- * quello live: serve a confrontarla con il video da cui è ispirata.
+ * quello live: serve a confrontarla con il video da cui è ispirata. Con [keepDashboard] il
+ * tabellone resta nel cruscotto, come con l'impostazione.
  */
-private fun introSnapshot(out: File, seconds: Double) {
+private fun introSnapshot(out: File, seconds: Double, keepDashboard: Boolean) {
     val millis = (seconds * 1000).toLong()
     val ticker = mutableLongStateOf(0L)
     val info = IntroInfo(
@@ -243,7 +245,8 @@ private fun introSnapshot(out: File, seconds: Double) {
             AppTheme {
                 Box(Modifier.fillMaxSize()) {
                     Box(
-                        Modifier.fillMaxSize().introBoardLayer({ millis }, { 0f }, { true })
+                        Modifier.fillMaxSize()
+                            .introBoardLayer({ millis }, { 0f }, { true }, { keepDashboard })
                             .background(Color(0xFF1C1E24)),
                     ) {
                         DepartureBoard(
@@ -252,7 +255,11 @@ private fun introSnapshot(out: File, seconds: Double) {
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
-                    IntroOverlay(millis = { millis }, info = info)
+                    IntroOverlay(
+                        millis = { millis },
+                        info = info,
+                        keepDashboard = { keepDashboard },
+                    )
                 }
             }
         }

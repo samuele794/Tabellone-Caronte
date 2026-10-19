@@ -5,8 +5,10 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.BoxWithConstraintsScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,7 +29,6 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.BlurEffect
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -52,18 +53,22 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 private const val TAG = "Intro"
 
 /**
  * Intro d'avvio sopra il tabellone [board]: terminale della sala circolazione, cruscotto con il
  * tabellone, banner "TABELLONE ATTIVATO", poi il tabellone si allarga a tutto schermo e resta lì.
+ * Con [LiveBoardState.dashboard] invece resta nel cruscotto, che rimane attorno a lui anche dopo
+ * l'intro, quando la si salta o quando è spenta.
  *
  * [board] è composto sempre, dall'inizio: intanto carica stazione e treni, e alla fine è già il
  * tabellone vero. Parte quando le impostazioni sono ripristinate e solo se [LiveBoardState.intro]
@@ -85,6 +90,7 @@ fun IntroHost(
     ready: Boolean = true,
     board: @Composable () -> Unit,
 ) {
+    val colors = introColors()
     var finished by remember { mutableStateOf(!enabled) }
     var running by remember { mutableStateOf(false) }
     var skipRequested by remember { mutableStateOf(false) }
@@ -147,14 +153,18 @@ fun IntroHost(
         }
     }
 
+    val keepDashboard = { state.restored && state.dashboard }
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier.fillMaxSize().introBoardLayer(
                 millis = { clock.longValue },
                 exit = { exit.floatValue },
                 active = { !finished },
+                keepDashboard = keepDashboard,
             ),
         ) { board() }
+        // Sotto l'intro solo quando sfuma perché saltata: per il resto è lei a disegnare il cruscotto.
+        if (keepDashboard() && (finished || exit.floatValue > 0f)) LiveDashboard(state)
         if (!finished) {
             val info = rememberIntroInfo(state, decoy)
             Box(
@@ -168,10 +178,11 @@ fun IntroHost(
                         info = info,
                         exit = { exit.floatValue },
                         onSkip = { if (running) skipRequested = true },
+                        keepDashboard = keepDashboard,
                     )
                     if (!ready) TapToStart()
                 } else {
-                    Box(Modifier.fillMaxSize().background(IntroColors.Background))
+                    Box(Modifier.fillMaxSize().background(colors.background))
                 }
             }
         }
@@ -239,23 +250,32 @@ private const val SKIP_BUTTON_FADE = 300L
 
 @Composable
 private fun TapToStart() {
+    val colors = introColors()
     val fonts = rememberIntroFonts()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val units = IntroUnits(min(maxWidth / 1600, maxHeight / 900), LocalDensity.current)
         Text(
             "TOCCA PER AVVIARE IL TERMINALE",
-            style = units.mono(fonts, 26, IntroColors.TextBright),
+            style = units.mono(fonts, 26, colors.primary),
             modifier = Modifier.align(Alignment.Center)
-                .background(IntroColors.Background.copy(alpha = 0.85f))
+                .background(colors.background.copy(alpha = 0.85f))
                 .padding(units * 16),
         )
     }
 }
 
-/** Dati del tabellone per l'intro; l'ora parte da quando l'intro compare. */
+/**
+ * Dati del tabellone per l'intro; l'ora parte da [start] (di solito quando l'intro compare),
+ * [lead] ms prima dell'inizio dell'intro.
+ */
 @Composable
-private fun rememberIntroInfo(state: LiveBoardState, decoy: Station?): IntroInfo {
-    val start = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()) }
+private fun rememberIntroInfo(
+    state: LiveBoardState,
+    decoy: Station?,
+    start: Instant = remember { Clock.System.now() },
+    lead: Long = 0,
+): IntroInfo {
+    val local = remember(start) { start.toLocalDateTime(TimeZone.currentSystemDefault()) }
     fun flag(value: Boolean) = if (value) "TRUE" else "FALSE"
     return IntroInfo(
         station = state.station,
@@ -275,8 +295,8 @@ private fun rememberIntroInfo(state: LiveBoardState, decoy: Station?): IntroInfo
             "FORNITORE" to state.source.name.uppercase(),
             "STAZIONE_ID" to state.station.id,
         ),
-        date = start.date,
-        startMillisOfDay = start.time.toMillisecondOfDay().toLong(),
+        date = local.date,
+        startMillisOfDay = local.time.toMillisecondOfDay().toLong() - lead,
     )
 }
 
@@ -292,24 +312,35 @@ internal fun zoomAt(millis: Long): Float = easeInOut(
 /**
  * Il tabellone sotto l'intro: invisibile durante il terminale, poi nel riquadro centrale del
  * cruscotto, sfocato sotto il banner, e infine a tutto schermo. Con [exit] (intro saltata) va a
- * tutto schermo e compare in dissolvenza. Con [active] = false non tocca nulla.
+ * tutto schermo e compare in dissolvenza. Con [keepDashboard] non si allarga: resta nel riquadro
+ * centrale, anche dopo. Con [active] = false (intro finita) non tocca nulla, salvo il cruscotto.
  */
 internal fun Modifier.introBoardLayer(
     millis: () -> Long,
     exit: () -> Float,
     active: () -> Boolean,
+    keepDashboard: () -> Boolean = { false },
 ): Modifier = graphicsLayer {
-    if (!active() || size.width <= 0f || size.height <= 0f) return@graphicsLayer
+    if (size.width <= 0f || size.height <= 0f) return@graphicsLayer
+    val keep = keepDashboard()
+    val running = active()
+    if (!running && !keep) return@graphicsLayer
+    val g = dashboardGeometry(size.width, size.height, MIN_SIDE.toPx())
+    val end = if (keep) g.center else Rect(0f, 0f, size.width, size.height)
+    transformOrigin = TransformOrigin(0f, 0f)
+    fun place(target: Rect) {
+        scaleX = target.width / size.width
+        scaleY = target.height / size.height
+        translationX = target.left
+        translationY = target.top
+    }
+    if (!running) {
+        place(end)
+        return@graphicsLayer
+    }
     val t = millis()
     val k = exit()
-    val g = dashboardGeometry(size.width, size.height, MIN_SIDE.toPx())
-    val full = Rect(0f, 0f, size.width, size.height)
-    val target = lerp(g.boardRect(zoomAt(t)), full, k)
-    transformOrigin = TransformOrigin(0f, 0f)
-    scaleX = target.width / size.width
-    scaleY = target.height / size.height
-    translationX = target.left
-    translationY = target.top
+    place(lerp(if (keep) g.center else g.boardRect(zoomAt(t)), end, k))
     alpha = if (IntroTimeline.phaseAt(t) == IntroPhase.Terminal) k else 1f
     val blur = bannerAmount(t) * (1f - k) * BANNER_BLUR.toPx()
     renderEffect = if (blur > 0.5f) BlurEffect(blur, blur, TileMode.Decal) else null
@@ -329,25 +360,23 @@ fun IntroOverlay(
     info: IntroInfo,
     exit: () -> Float = { 0f },
     onSkip: (() -> Unit)? = null,
+    keepDashboard: () -> Boolean = { false },
     modifier: Modifier = Modifier,
 ) {
     val fonts = rememberIntroFonts()
-    val density = LocalDensity.current
+    val scrim = MaterialTheme.colorScheme.scrim
     BoxWithConstraints(modifier.fillMaxSize().graphicsLayer { alpha = 1f - exit() }) {
         val compact = maxWidth < maxHeight
-        val u = if (compact) maxWidth / 900 else min(maxWidth / 1600, maxHeight / 900)
-        val units = remember(u, density) { IntroUnits(u, density) }
+        val units = rememberIntroUnits()
         val width = constraints.maxWidth
         val height = constraints.maxHeight
-        val geometry = remember(width, height, density) {
-            dashboardGeometry(width.toFloat(), height.toFloat(), with(density) { MIN_SIDE.toPx() })
-        }
+        val geometry = rememberDashboardGeometry()
         val phase by remember { derivedStateOf { IntroTimeline.phaseAt(millis()) } }
 
         if (phase >= IntroPhase.Glitch) {
             DashboardScreen(
                 millis, info, fonts, units, geometry,
-                zoom = { zoomAt(millis()) },
+                zoom = { if (keepDashboard()) 0f else zoomAt(millis()) },
                 modifier = Modifier.graphicsLayer {
                     val blur = bannerAmount(millis()) * BANNER_BLUR.toPx()
                     renderEffect = if (blur > 0.5f) BlurEffect(blur, blur, TileMode.Decal) else null
@@ -357,7 +386,7 @@ fun IntroOverlay(
         if (phase == IntroPhase.Banner || phase == IntroPhase.Zoom) {
             Box(
                 Modifier.fillMaxSize()
-                    .drawBehind { drawRect(Color.Black, alpha = 0.5f * bannerAmount(millis())) })
+                    .drawBehind { drawRect(scrim, alpha = 0.5f * bannerAmount(millis())) })
             IntroBanner(millis, fonts, units)
         }
         if (phase <= IntroPhase.Glitch) {
@@ -368,6 +397,53 @@ fun IntroOverlay(
                 Modifier.glitchBands(millis),
             )
         }
+    }
+}
+
+/** Unità dell'intro per questo riquadro: su schermi verticali conta solo la larghezza. */
+@Composable
+private fun BoxWithConstraintsScope.rememberIntroUnits(): IntroUnits {
+    val density = LocalDensity.current
+    val u = if (maxWidth < maxHeight) maxWidth / 900 else min(maxWidth / 1600, maxHeight / 900)
+    return remember(u, density) { IntroUnits(u, density) }
+}
+
+@Composable
+private fun BoxWithConstraintsScope.rememberDashboardGeometry(): DashboardGeometry {
+    val density = LocalDensity.current
+    val width = constraints.maxWidth.toFloat()
+    val height = constraints.maxHeight.toFloat()
+    return remember(width, height, density) {
+        dashboardGeometry(width, height, with(density) { MIN_SIDE.toPx() })
+    }
+}
+
+/**
+ * Il cruscotto che resta attorno al tabellone con [LiveBoardState.dashboard], con i dati e l'ora
+ * veri. Il suo tempo parte dalla fine dell'intro, così le animazioni d'ingresso sono già concluse;
+ * in modalità risparmio va avanti a scatti di un secondo invece che a ogni frame.
+ */
+@Composable
+private fun LiveDashboard(state: LiveBoardState) {
+    val start = remember { Clock.System.now() }
+    val elapsed = remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (state.ecoMode) delay(1_000) else withFrameNanos { }
+            elapsed.longValue = (Clock.System.now() - start).inWholeMilliseconds
+        }
+    }
+    val info = rememberIntroInfo(state, decoy = null, start = start, lead = IntroTimeline.TOTAL)
+    val fonts = rememberIntroFonts()
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        DashboardScreen(
+            millis = { IntroTimeline.TOTAL + elapsed.longValue },
+            info = info,
+            fonts = fonts,
+            units = rememberIntroUnits(),
+            geometry = rememberDashboardGeometry(),
+            zoom = { 0f },
+        )
     }
 }
 

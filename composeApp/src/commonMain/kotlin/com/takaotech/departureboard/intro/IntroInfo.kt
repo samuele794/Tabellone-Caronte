@@ -3,7 +3,9 @@ package com.takaotech.departureboard.intro
 import androidx.compose.runtime.Immutable
 import com.takaotech.departureboard.Departure
 import com.takaotech.departureboard.rfi.Station
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.plus
 
 /**
  * Quello che l'intro mostra del tabellone: stazione (il terminale "si collega" a lei), treni e
@@ -25,6 +27,10 @@ data class IntroInfo(
 ) {
     /** Millisecondi dalla mezzanotte a [millis] dall'inizio dell'intro. */
     fun millisOfDayAt(millis: Long): Long = (startMillisOfDay + millis).mod(DAY)
+
+    /** Data a [millis] dall'inizio dell'intro: dopo la mezzanotte è quella del giorno dopo. */
+    fun dateAt(millis: Long): LocalDate =
+        date.plus((startMillisOfDay + millis).floorDiv(DAY).toInt(), DateTimeUnit.DAY)
 
     /** "hh:mm:ss" a [millis] dall'inizio dell'intro. */
     fun clockAt(millis: Long): String {
