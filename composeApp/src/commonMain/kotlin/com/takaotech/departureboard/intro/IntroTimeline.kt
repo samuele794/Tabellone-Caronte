@@ -18,6 +18,12 @@ enum class IntroPhase { Terminal, Glitch, Dashboard, Banner, Zoom, Done }
 object IntroTimeline {
     const val TRACK = "files/intro.mp3"
 
+    /**
+     * Cruscotto e tabellone si disegnano già sotto il terminale, che li copre: il primo disegno
+     * costa, e durante lo stacco farebbe saltare le bande.
+     */
+    const val WARMUP_AT = 36_500L
+
     /** Colpo dell'audio: il cruscotto comincia a entrare a bande sopra il terminale. */
     const val GLITCH_AT = 37_500L
 

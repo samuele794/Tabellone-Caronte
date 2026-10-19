@@ -341,7 +341,7 @@ internal fun Modifier.introBoardLayer(
     val t = millis()
     val k = exit()
     place(lerp(if (keep) g.center else g.boardRect(zoomAt(t)), end, k))
-    alpha = if (IntroTimeline.phaseAt(t) == IntroPhase.Terminal) k else 1f
+    alpha = if (t < IntroTimeline.WARMUP_AT) k else 1f
     val blur = bannerAmount(t) * (1f - k) * BANNER_BLUR.toPx()
     renderEffect = if (blur > 0.5f) BlurEffect(blur, blur, TileMode.Decal) else null
 }
@@ -372,29 +372,34 @@ fun IntroOverlay(
         val height = constraints.maxHeight
         val geometry = rememberDashboardGeometry()
         val phase by remember { derivedStateOf { IntroTimeline.phaseAt(millis()) } }
+        val warm by remember { derivedStateOf { millis() >= IntroTimeline.WARMUP_AT } }
 
-        if (phase >= IntroPhase.Glitch) {
-            DashboardScreen(
-                millis, info, fonts, units, geometry,
-                zoom = { if (keepDashboard()) 0f else zoomAt(millis()) },
-                modifier = Modifier.graphicsLayer {
+        // Cruscotto e banner composti da subito, anche se non si vedono: la prima composizione
+        // (testi, font, logo a punti) costa, e a metà intro farebbe saltare lo stacco.
+        DashboardScreen(
+            millis, info, fonts, units, geometry,
+            zoom = { if (keepDashboard()) 0f else zoomAt(millis()) },
+            modifier = Modifier
+                .drawWithContent { if (warm) drawContent() }
+                .graphicsLayer {
                     val blur = bannerAmount(millis()) * BANNER_BLUR.toPx()
                     renderEffect = if (blur > 0.5f) BlurEffect(blur, blur, TileMode.Decal) else null
                 },
-            )
-        }
+        )
         if (phase == IntroPhase.Banner || phase == IntroPhase.Zoom) {
             Box(
                 Modifier.fillMaxSize()
                     .drawBehind { drawRect(scrim, alpha = 0.5f * bannerAmount(millis())) })
-            IntroBanner(millis, fonts, units)
         }
+        // Fino allo stinger è trasparente.
+        IntroBanner(millis, fonts, units)
         if (phase <= IntroPhase.Glitch) {
             TerminalScreen(
                 millis, info, fonts, units, compact,
                 IntSize(width, height),
                 onSkip,
-                Modifier.glitchBands(millis),
+                // Nel suo layer il terminale si disegna una volta sola, non una per banda.
+                Modifier.glitchBands(millis).graphicsLayer(),
             )
         }
     }
