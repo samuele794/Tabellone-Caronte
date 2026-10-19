@@ -128,6 +128,20 @@ class FnmBoardSourceTest {
     }
 
     @Test
+    fun `invalidando l'elenco si riscarica subito, con i dettagli`() = runBlocking {
+        source.board(domodossola, BoardMode.Departures)
+        val before = assertNotNull(source.nextListRefreshAt)
+        clock.advance(1.minutes)
+
+        source.invalidateList()
+        source.board(domodossola, BoardMode.Departures)
+
+        assertEquals(2, listRequests)
+        assertEquals(2 * FnmBoardSource.MAX_TRAINS, bffRequests.size)
+        assertTrue(assertNotNull(source.nextListRefreshAt) > before)
+    }
+
+    @Test
     fun `l'intervallo dell'elenco si può cambiare`() = runBlocking {
         source.listRefresh = 2.minutes
         source.board(domodossola, BoardMode.Departures)

@@ -34,4 +34,10 @@ interface BoardSource : AutoCloseable {
     var listRefresh: Duration?
         get() = null
         set(_) {}
+
+    /**
+     * Il prossimo [board] riscarica anche l'elenco dei treni, senza attendere [listRefresh]; per
+     * chi non lo tiene da parte non fa nulla.
+     */
+    fun invalidateList() {}
 }

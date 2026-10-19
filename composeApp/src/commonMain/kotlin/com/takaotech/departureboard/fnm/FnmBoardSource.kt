@@ -63,6 +63,11 @@ class FnmBoardSource(
     override val nextListRefreshAt: TimeSource.Monotonic.ValueTimeMark?
         get() = listFetchedMark?.plus(listInterval)
 
+    /** Se riscaricarlo fallisce, si tiene comunque l'elenco precedente. */
+    override fun invalidateList() {
+        listFetchedAt = null
+    }
+
     /** Treni ancora in corsa secondo l'ultimo dettaglio, per stazione e modalità. */
     private val alive = HashMap<Pair<String, BoardMode>, Map<String, FnmListTrain>>()
 

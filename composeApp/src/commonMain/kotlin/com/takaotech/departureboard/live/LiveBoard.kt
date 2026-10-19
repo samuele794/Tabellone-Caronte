@@ -639,9 +639,17 @@ class LiveBoardState(
     /** Si può chiedere un aggiornamento a mano: impostazioni ripristinate e nessun download in corso. */
     val canRefreshNow get() = restored && !loading
 
-    /** Aggiorna subito: [waitForRefresh] smette di attendere e il conto alla rovescia riparte. */
+    /** Il prossimo [refresh] è chiesto a mano: riscarica anche l'elenco dei treni. */
+    private var manualRefresh = false
+
+    /**
+     * Aggiorna subito, elenco dei treni compreso: [waitForRefresh] smette di attendere e il conto
+     * alla rovescia riparte.
+     */
     fun requestRefresh() {
-        if (canRefreshNow) refreshRequests.trySend(Unit)
+        if (!canRefreshNow) return
+        manualRefresh = true
+        refreshRequests.trySend(Unit)
     }
 
     /**
@@ -715,6 +723,10 @@ class LiveBoardState(
         loading = true
         // Una richiesta arrivata mentre l'attesa era già finita la soddisfa questo aggiornamento.
         refreshRequests.tryReceive()
+        if (manualRefresh) {
+            manualRefresh = false
+            client.invalidateList()
+        }
         var cancelled = false
         try {
             val board = client.board(station, key.third)
