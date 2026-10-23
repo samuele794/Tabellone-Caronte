@@ -15,11 +15,13 @@ import com.takaotech.departureboard.tts.PcmPlayer
 import com.takaotech.departureboard.tts.SoundPlayer
 import com.takaotech.departureboard.tts.SpeechEngine
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.AfterTest
@@ -74,12 +76,19 @@ class SettingsStoreTest {
     }
 
     /**
-     * Attende che la scrittura in background di [settings] sia arrivata su disco. Il margine è
-     * largo perché su Linux, con il disco occupato da altri processi (la CI compila in parallelo),
-     * il sync di DataStore può fermarsi per secondi; quando la scrittura arriva si riparte subito.
+     * Attende che la scrittura in background di [settings] sia arrivata su disco.
+     *
+     * Rilegge invece di restare in ascolto su [SettingsStore.settings]: DataStore 1.2 incrementa
+     * la versione prima di scrivere il file, e un collector che parte proprio in quel momento legge
+     * senza lock il contenuto vecchio con la versione nuova, poi scarta come già visto il valore
+     * appena scritto e resta fermo. Una lettura nuova, dopo la scrittura, prende la cache aggiornata.
      */
     private suspend fun SettingsStore.awaitSaved(settings: BoardSettings) {
-        withTimeout(30_000) { this@awaitSaved.settings.first { it == settings } }
+        var last: BoardSettings? = null
+        withTimeoutOrNull(10_000) {
+            while (load().also { last = it } != settings) delay(20)
+        }
+        assertEquals(settings, last, "Impostazioni non salvate entro 10 s")
     }
 
     private fun saveOnDisk(settings: BoardSettings) = runBlocking {

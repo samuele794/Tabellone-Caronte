@@ -40,8 +40,7 @@ workflow(
             action = SetupJava(distribution = SetupJava.Distribution.Temurin, javaVersion = "21"),
         )
         uses(name = "Gradle", action = ActionsSetupGradle())
-        // I test prima e da soli: in parallelo con R8 e ProGuard il disco è saturo e le
-        // scritture di DataStore rallentano.
+        // I test in uno step a sé: se si rompono lo si vede subito, senza cercarli tra R8 e ProGuard.
         run(name = "Test", command = "./gradlew :composeApp:jvmTest")
         run(
             name = "Build",
