@@ -73,9 +73,13 @@ class SettingsStoreTest {
         dir.deleteRecursively()
     }
 
-    /** Attende che la scrittura in background di [settings] sia arrivata su disco. */
+    /**
+     * Attende che la scrittura in background di [settings] sia arrivata su disco. Il margine è
+     * largo perché su Linux, con il disco occupato da altri processi (la CI compila in parallelo),
+     * il sync di DataStore può fermarsi per secondi; quando la scrittura arriva si riparte subito.
+     */
     private suspend fun SettingsStore.awaitSaved(settings: BoardSettings) {
-        withTimeout(5_000) { this@awaitSaved.settings.first { it == settings } }
+        withTimeout(30_000) { this@awaitSaved.settings.first { it == settings } }
     }
 
     private fun saveOnDisk(settings: BoardSettings) = runBlocking {

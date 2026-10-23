@@ -41,8 +41,11 @@ jobs:
       name: 'Gradle'
       uses: 'gradle/actions/setup-gradle@v6'
     - id: 'step-3'
-      name: 'Test e build'
-      run: './gradlew :composeApp:jvmTest :androidApp:assembleRelease :composeApp:packageUniversalJar :composeApp:wasmJsBrowserDistribution'
+      name: 'Test'
+      run: './gradlew :composeApp:jvmTest'
+    - id: 'step-4'
+      name: 'Build'
+      run: './gradlew :androidApp:assembleRelease :composeApp:packageUniversalJar :composeApp:wasmJsBrowserDistribution'
   docker:
     name: 'Immagine Docker'
     runs-on: 'ubuntu-latest'
