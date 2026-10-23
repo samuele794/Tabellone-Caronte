@@ -7,6 +7,10 @@ lampeggianti, orologio e avvisi in basso.
 Progetto Kotlin Multiplatform con tre target: **JVM** (desktop), **Android** e **wasmJs** (pagina
 web).
 
+| LED                                                                  | Palette                                                              |
+|----------------------------------------------------------------------|----------------------------------------------------------------------|
+| ![Tabellone LED ambra a matrice di punti](preview.png)               | ![Tabellone a palette in stile Solari](docs/screenshots/palette.png) |
+
 ## ⚠️ Disclaimer
 Questa è solamente un app fan made, non c'è nessun intento di farla funzionare
 come app ufficiale e neanche di venderla e farci soldi.
