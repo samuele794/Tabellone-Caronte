@@ -7,6 +7,14 @@ lampeggianti, orologio e avvisi in basso.
 Progetto Kotlin Multiplatform con tre target: **JVM** (desktop), **Android** e **wasmJs** (pagina
 web).
 
+## ⚠️ Disclaimer
+Questa è solamente un app fan made, non c'è nessun intento di farla funzionare
+come app ufficiale e neanche di venderla e farci soldi.
+
+L'idea è di creare l'esperienza di essere in stazione con i ritardi annessi,
+visto che un certo Ministro dei Trasporti non è in grado di prendersi [le sue responsabilità](https://www.ilfattoquotidiano.it/2026/07/08/caos-treni-salvini-ritardi-notizie/8443072/)
+
+
 ```bash
 ./gradlew run                                         # desktop: tabellone live dal monitor RFI
 ./gradlew run --args="--snapshot board.png 3 de"      # PNG headless dei dati demo dopo 3 s, etichette IT/DE (in composeApp/)
