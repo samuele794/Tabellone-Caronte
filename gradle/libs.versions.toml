@@ -18,6 +18,7 @@ android-targetSdk = "37"
 android-minSdk = "24"
 nucleus = "2.5.18"
 app-version = "1.2.0"
+app-versionCode = "3"
 
 [libraries]
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }

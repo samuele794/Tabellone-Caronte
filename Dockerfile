@@ -8,7 +8,9 @@
 #   docker run --rm -p 8080:8080 departure-board-web      → http://localhost:8080
 
 # --- Build: distribuzione wasmJs con Gradle (non serve l'Android SDK) ---
-FROM eclipse-temurin:21-jdk AS build
+# Gira sempre sull'architettura di chi compila: il wasm è lo stesso per amd64 e arm64, quindi le
+# immagini multi-arch non passano Gradle sotto emulazione.
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS build
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/root/.gradle \

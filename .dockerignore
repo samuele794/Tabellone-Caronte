@@ -6,9 +6,11 @@
 **/build
 **/.DS_Store
 local.properties
+signing
 *.jks
 androidApp/release
 MAS.pdf
 preview.png
 Dockerfile
 .dockerignore
+.github

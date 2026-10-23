@@ -43,18 +43,19 @@ visto che un certo Ministro dei Trasporti non è in grado di prendersi [le sue r
 | Desktop | `./gradlew :composeApp:packageUniversalJar`       | `composeApp/build/dist/DepartureBoard-<versione>.jar` (Windows/macOS/Linux) |
 
 **Android**: la release passa da R8 (`isMinifyEnabled`, `isShrinkResources`) ed è firmata con
-`DepartureBoardKeyStore.jks`. Le credenziali stanno in `local.properties`, che non va in git:
+`signing/DepartureBoardKeyStore.jks`. Le credenziali stanno in `signing/credential.properties`; la
+cartella `signing/` è fuori da git:
 
 ```properties
-release.storeFile=DepartureBoardKeyStore.jks
-release.storePassword=…
-release.keyAlias=…
-release.keyPassword=…
+storeFile=DepartureBoardKeyStore.jks
+storePassword=…
+keyAlias=…
+keyPassword=…
 ```
 
-`storeFile` è relativo alla root del progetto. Se manca uno dei quattro valori la build riesce lo
-stesso, ma esce `androidApp-release-unsigned.apk`. La versione è `versionCode`/`versionName` in
-`androidApp/build.gradle.kts`.
+`storeFile` è relativo a `signing/` (o un percorso assoluto). Se manca il file o uno dei quattro
+valori la build riesce lo stesso, ma esce `androidApp-release-unsigned.apk`. La versione è `app-version` (versionName) e
+`app-versionCode` in `gradle/libs.versions.toml`, la stessa del desktop e dell'immagine Docker.
 
 **Web**: la cartella va servita con un proxy verso RFI e Trenord, come fa il container Docker
 (vedi [Pagina web](#pagina-web-wasmjs)).
@@ -62,6 +63,54 @@ stesso, ma esce `androidApp-release-unsigned.apk`. La versione è `versionCode`/
 **Desktop**: un solo jar con ProGuard e le native di tutte le piattaforme, da lanciare con
 `java -jar` (Java 21+); vedi [Desktop (Nucleus)](#desktop-nucleus). La versione è `app-version` in
 `gradle/libs.versions.toml`.
+
+## Release e CI
+
+Le pipeline GitHub Actions sono scritte in Kotlin con
+[github-workflows-kt](https://github.com/typesafegithub/github-workflows-kt): si modifica lo script
+`.main.kts`, si rigenera il YAML e si committano entrambi (un job di ogni workflow rigenera il YAML e
+fallisce se non coincide).
+
+```bash
+kotlin .github/workflows/ci.main.kts         # → .github/workflows/ci.yaml
+kotlin .github/workflows/release.main.kts    # → .github/workflows/release.yaml
+```
+
+Gli script vanno lanciati dalla root del repository. La cache di `main.kts` si ricorda il percorso
+della prima compilazione: se nel job `check_yaml_consistency` del YAML compare `release.main.kts`
+senza `.github/workflows/`, rigenerare con `KOTLIN_MAIN_KTS_COMPILED_SCRIPTS_CACHE_DIR=` davanti.
+
+| Workflow  | Quando              | Cosa fa                                                                                                      |
+|-----------|---------------------|--------------------------------------------------------------------------------------------------------------|
+| `CI`      | push su `main` e PR | `jvmTest`, APK release (non firmato), jar universale, distribuzione wasmJs, build dell'immagine senza push |
+| `Release` | push di un tag `v*` | GitHub Release con APK firmato e jar, immagine su ghcr.io                                                  |
+
+Per pubblicare una versione si aggiorna `app-version` e si incrementa `app-versionCode` in
+`gradle/libs.versions.toml`, poi:
+
+```bash
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+Il tag deve corrispondere ad `app-version`, altrimenti la release si ferma. Con un suffisso
+(`v1.2.0-rc.1`) esce una prerelease: Release marcata come tale e immagine col solo tag
+`1.2.0-rc.1`.
+
+- **GitHub Release**: `Tabellone-<versione>.apk` e `DepartureBoard-<versione>.jar`, note generate
+  dai commit.
+- **Docker**: `ghcr.io/samuele794/tabellone-caronte` per `linux/amd64` e `linux/arm64`, con i tag
+  `<versione>`, `<major>.<minor>` e `latest` e l'attestazione di provenienza della build.
+  `docker run --rm -p 8080:8080 ghcr.io/samuele794/tabellone-caronte`.
+
+Da configurare una volta sola nel repository GitHub (guida passo passo in
+[docs/release](docs/release/README.md)):
+
+- **Secret** (Settings → Secrets and variables → Actions): `ANDROID_KEYSTORE_BASE64`
+  (`base64 -i signing/DepartureBoardKeyStore.jks`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+  `ANDROID_KEY_PASSWORD`: gli stessi valori di `signing/credential.properties`, che il workflow
+  ricrea in CI.
+- **Package** ghcr.io: dopo la prima release, da Packages → `tabellone-caronte` → Package settings
+  si può rendere pubblico.
 
 ## Moduli
 
@@ -417,6 +466,9 @@ WasmGC (Firefox 120+, Chrome 119+, Safari 18.2+). Differenze rispetto a desktop 
 docker build -t departure-board-web .
 docker run --rm -p 8080:8080 departure-board-web     # http://localhost:8080
 ```
+
+Le immagini già pronte stanno su `ghcr.io/samuele794/tabellone-caronte` (vedi
+[Release e CI](#release-e-ci)).
 
 Il `Dockerfile` compila la distribuzione wasmJs con Gradle in un'immagine JDK 21 (l'Android SDK
 non serve) e la copia in `nginxinc/nginx-unprivileged`, che ascolta sulla 8080 senza root.
