@@ -11,6 +11,10 @@
 # Gira sempre sull'architettura di chi compila: il wasm è lo stesso per amd64 e arm64, quindi le
 # immagini multi-arch non passano Gradle sotto emulazione.
 FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS build
+# Il Node.js che il plugin Kotlin scarica per wasmJs vuole libatomic, assente nell'immagine.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libatomic1 \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/root/.gradle \
