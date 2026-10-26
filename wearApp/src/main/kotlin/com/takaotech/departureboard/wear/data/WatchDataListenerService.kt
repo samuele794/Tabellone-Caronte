@@ -22,7 +22,11 @@ class WatchDataListenerService : WearableListenerService() {
         val selectionChanged = runBlocking {
             items.map { (path, map) -> app.refresher.onDataItem(path, map) }.any { it }
         }
-        // Treno nuovo: lo si chiede subito, senza attendere che qualcuno apra l'app.
-        if (selectionChanged) app.scope.launch { app.refresher.refresh() }
+        // Treno nuovo: lo si chiede subito, senza attendere che qualcuno apra l'app, e si
+        // riprogramma il background sui suoi orari.
+        if (selectionChanged) app.scope.launch {
+            app.refresher.refresh(RefreshTrigger.Manual)
+            RefreshWorker.schedule(app)
+        }
     }
 }

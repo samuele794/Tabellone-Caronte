@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import com.takaotech.departureboard.debuglog.DebugLog
 import com.takaotech.departureboard.watch.WatchStore
+import com.takaotech.departureboard.wear.data.ActiveSurfaces
 import com.takaotech.departureboard.wear.data.WatchRefresher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +20,9 @@ class WearApp : Application() {
     val refresher by lazy {
         WatchRefresher(this, WatchStore(File(filesDir, "datastore/watch.json").absolutePath))
     }
+
+    /** Tile e complication presenti, che chiedono l'aggiornamento in background. */
+    val surfaces by lazy { ActiveSurfaces(this) }
 
     /** Lavori che devono finire anche se chi li ha chiesti (un servizio) se ne va. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

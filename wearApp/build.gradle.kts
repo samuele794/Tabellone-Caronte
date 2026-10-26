@@ -72,6 +72,7 @@ dependencies {
     implementation(libs.wear.complications.data.source)
     implementation(libs.wear.remote.interactions)
     implementation(libs.wear)
+    implementation(libs.work.runtime)
     implementation(libs.concurrent.futures.ktx)
     testImplementation(libs.kotlin.test.junit)
 }

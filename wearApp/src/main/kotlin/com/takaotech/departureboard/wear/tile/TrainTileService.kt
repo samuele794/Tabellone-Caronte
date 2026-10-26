@@ -11,37 +11,56 @@ import androidx.wear.protolayout.LayoutElementBuilders
 import androidx.wear.protolayout.ModifiersBuilders
 import androidx.wear.protolayout.ResourceBuilders
 import androidx.wear.protolayout.TimelineBuilders
+import androidx.wear.tiles.EventBuilders
 import androidx.wear.tiles.RequestBuilders
 import androidx.wear.tiles.TileBuilders
 import androidx.wear.tiles.TileService
 import com.google.common.util.concurrent.ListenableFuture
 import com.takaotech.departureboard.watch.WatchSnapshot
 import com.takaotech.departureboard.wear.R
+import com.takaotech.departureboard.wear.data.ActiveSurfaces
+import com.takaotech.departureboard.wear.data.RefreshWorker
 import com.takaotech.departureboard.wear.ui.TrainActivity
 import com.takaotech.departureboard.wear.ui.delayText
 import com.takaotech.departureboard.wear.ui.liveTrain
-import com.takaotech.departureboard.wear.ui.compactStatusText
+import com.takaotech.departureboard.wear.ui.tileStatusText
 import com.takaotech.departureboard.wear.wearApp
-import kotlin.time.Duration.Companion.minutes
+import kotlinx.coroutines.launch
 
 /**
- * Tile del treno seguito: destinazione, partenza con ritardo, binario. Risponde subito con
- * l'ultimo dato salvato; se è vecchio chiede un aggiornamento, che arrivando ridisegna il tile.
+ * Tile del treno seguito: destinazione, partenza con ritardo, binario. Risponde con l'ultimo dato
+ * salvato e non scade mai: lo si ridisegna quando arriva un dato nuovo, e finché c'è
+ * [RefreshWorker] aggiorna il treno attorno alla partenza.
  */
 class TrainTileService : TileService() {
 
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> =
         SuspendToFutureAdapter.launchFuture {
             val app = wearApp
-            val snapshot = app.refresher.store.load()
-            val now = System.currentTimeMillis()
-            app.refresher.refreshIfStale(snapshot)
+            // Tile aggiunti prima che ci fosse l'evento di aggiunta: si segnano alla prima richiesta.
+            if (app.surfaces.add(ActiveSurfaces.tile(requestParams.tileId))) RefreshWorker.schedule(
+                app
+            )
             TileBuilders.Tile.Builder()
                 .setResourcesVersion(RESOURCES_VERSION)
-                .setFreshnessIntervalMillis(FRESHNESS.inWholeMilliseconds)
-                .setTileTimeline(TimelineBuilders.Timeline.fromLayoutElement(layout(snapshot, now)))
+                // 0: nessuna scadenza, l'ora dell'aggiornamento è assoluta e non invecchia.
+                .setFreshnessIntervalMillis(0)
+                .setTileTimeline(TimelineBuilders.Timeline.fromLayoutElement(layout(app.refresher.store.load())))
                 .build()
         }
+
+    override fun onTileAddEvent(requestParams: EventBuilders.TileAddEvent) {
+        val app = wearApp
+        if (app.surfaces.add(ActiveSurfaces.tile(requestParams.tileId))) {
+            app.scope.launch { RefreshWorker.schedule(app) }
+        }
+    }
+
+    override fun onTileRemoveEvent(requestParams: EventBuilders.TileRemoveEvent) {
+        val app = wearApp
+        app.surfaces.remove(ActiveSurfaces.tile(requestParams.tileId))
+        app.scope.launch { RefreshWorker.schedule(app) }
+    }
 
     override fun onTileResourcesRequest(
         requestParams: RequestBuilders.ResourcesRequest,
@@ -50,7 +69,7 @@ class TrainTileService : TileService() {
             ResourceBuilders.Resources.Builder().setVersion(RESOURCES_VERSION).build()
         }
 
-    private fun layout(snapshot: WatchSnapshot, now: Long): LayoutElementBuilders.LayoutElement {
+    private fun layout(snapshot: WatchSnapshot): LayoutElementBuilders.LayoutElement {
         val column = LayoutElementBuilders.Column.Builder()
             .setHorizontalAlignment(LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER)
         val selection = snapshot.selection
@@ -70,7 +89,7 @@ class TrainTileService : TileService() {
             live?.platform?.takeIf { it.isNotBlank() }?.let {
                 column.addContent(label(R.string.label_platform)).addContent(text(it, 16f, LABEL, bold = true))
             }
-            column.addContent(spacer()).addContent(text(compactStatusText(snapshot, now), 10f, STATUS))
+            column.addContent(spacer()).addContent(text(tileStatusText(snapshot), 10f, STATUS))
         }
         return LayoutElementBuilders.Box.Builder()
             .setWidth(expand())
@@ -123,9 +142,6 @@ class TrainTileService : TileService() {
 
     private companion object {
         const val RESOURCES_VERSION = "1"
-
-        /** Ogni quanto il sistema richiede il tile anche senza dati nuovi. */
-        val FRESHNESS = 5.minutes
 
         const val BLACK = 0xFF000000.toInt()
         const val AMBER = 0xFFFFA51F.toInt()

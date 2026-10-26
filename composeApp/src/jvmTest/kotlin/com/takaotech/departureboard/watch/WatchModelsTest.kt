@@ -63,6 +63,17 @@ class WatchModelsTest {
     }
 
     @Test
+    fun `la selezione porta l'orario, e quelle salvate prima si leggono senza`() {
+        assertEquals("19:18", WatchSelection.of(StationSource.Rfi, selection.station, train).time)
+        val withTime = selection.copy(time = "19:18")
+        assertEquals(withTime, decodeWatchSelection(encodeWatchSelection(withTime)))
+        val older =
+            """{"selection":{"source":"Rfi","station":{"id":"837","name":"BOLOGNA CENTRALE"},""" +
+                    """"trainNumber":"91831","label":"R 91831 → VIGNOLA"}}"""
+        assertEquals(selection, decodeWatchSelection(older))
+    }
+
+    @Test
     fun `in attesa si tiene l'ultimo treno visto della stessa selezione`() {
         val waiting = WatchSnapshot(selection, null, WatchStatus.NotOnBoard, updatedAt = 2_000)
 

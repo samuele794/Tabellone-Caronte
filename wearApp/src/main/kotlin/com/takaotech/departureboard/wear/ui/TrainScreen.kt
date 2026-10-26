@@ -4,12 +4,13 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -19,15 +20,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -44,8 +53,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
+import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
+import androidx.wear.compose.foundation.rotary.rotaryScrollable
 import androidx.wear.compose.material3.Button
-import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import com.takaotech.departureboard.BoardColors
 import com.takaotech.departureboard.DotAlign
@@ -61,8 +73,10 @@ import com.takaotech.departureboard.watch.WatchSnapshot
 import com.takaotech.departureboard.watch.WatchStatus
 import com.takaotech.departureboard.watch.WatchedTrain
 import com.takaotech.departureboard.wear.R
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -88,9 +102,13 @@ private fun charsIn(width: Dp, pitch: Dp) = ((width / pitch - 2 + 1) / 6).toInt(
  *
  * Il monitor è circa tre volte più largo che alto: qui la griglia è più alta, perché nel cerchio
  * le scritte restino leggibili. Le misure sono frazioni del diametro, così il disegno è lo stesso
- * su ogni watch. Sopra c'è lo stato dell'aggiornamento, sotto la stazione; un tocco aggiorna.
+ * su ogni watch. Sopra c'è lo stato dell'aggiornamento, sotto la stazione.
  *
- * In [ambient] il pannello diventa nero, i LED spenti spariscono e nulla scorre o lampeggia.
+ * Il monitor riempie lo schermo; scorrendo (dito o corona/ghiera) sotto compare il pulsante
+ * "Aggiorna". Un tocco sul monitor non fa nulla, così non si aggiorna per sbaglio.
+ *
+ * In [ambient] il pannello diventa nero, i LED spenti spariscono, quelli accesi si attenuano e
+ * perdono l'alone, le etichette perdono il riquadro: nulla scorre o lampeggia e il ticker si ferma.
  */
 @Composable
 fun TrainScreen(
@@ -104,22 +122,90 @@ fun TrainScreen(
     val colors = if (ambient) AmbientColors else PanelColors
     CompositionLocalProvider(
         LocalBoardColors provides colors,
-        LocalLedTicker provides rememberLedTicker(),
+        LocalLedTicker provides rememberLedTicker(running = !ambient),
+        LocalAmbient provides ambient,
     ) {
         BoxWithConstraints(
-            Modifier.fillMaxSize()
-                .background(colors.board)
-                .clickable(enabled = !ambient && snapshot.selection != null, onClick = onRefresh),
+            Modifier
+                .fillMaxSize()
+                .background(colors.board),
             contentAlignment = Alignment.Center,
         ) {
             val geometry = Geometry(min(maxWidth, maxHeight))
             if (snapshot.selection == null) {
                 NoSelection(geometry, onOpenPhone, ambient)
             } else {
-                Monitor(snapshot, nowMillis, ambient, refreshing, geometry)
+                val screen = Modifier.size(maxWidth, maxHeight)
+                Scrolling(ambient) { scrollToTop ->
+                    Box(screen) { Monitor(snapshot, nowMillis, ambient, refreshing, geometry) }
+                    RefreshButton(
+                        refreshing,
+                        geometry,
+                        onClick = {
+                            onRefresh()
+                            // Si torna al monitor, dove la riga in alto dice "aggiornamento…".
+                            scrollToTop()
+                        },
+                    )
+                }
             }
         }
     }
+}
+
+/**
+ * Colonna che scorre con il dito e con la corona o la ghiera, con l'indicatore di scorrimento sul
+ * bordo. In ambient torna in cima e si blocca: si vede solo il monitor. [content] riceve una
+ * funzione per tornare in cima.
+ */
+@Composable
+private fun Scrolling(
+    ambient: Boolean,
+    content: @Composable ColumnScope.(scrollToTop: () -> Unit) -> Unit
+) {
+    val scroll = rememberScrollState()
+    val focus = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(ambient) {
+        if (ambient) scroll.scrollTo(0) else focus.requestFocus()
+    }
+    ScreenScaffold(scrollState = scroll, contentPadding = PaddingValues()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .rotaryScrollable(RotaryScrollableDefaults.behavior(scroll), focus)
+                .verticalScroll(scroll, enabled = !ambient),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            content { scope.launch { scroll.animateScrollTo(0) } }
+        }
+    }
+}
+
+/** Il pulsante sotto il monitor: moduli antracite e scritta ambra, come il tabellone. */
+@Composable
+private fun RefreshButton(refreshing: Boolean, g: Geometry, onClick: () -> Unit) {
+    val colors = LocalBoardColors.current
+    Button(
+        onClick = onClick,
+        enabled = !refreshing,
+        modifier = Modifier.width(g.d * 0.6f),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = colors.module,
+            contentColor = colors.led,
+            disabledContainerColor = colors.module,
+            disabledContentColor = colors.led.copy(alpha = 0.5f),
+        ),
+    ) {
+        Text(
+            stringResource(if (refreshing) R.string.refreshing else R.string.refresh),
+            Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+    // Spazio sotto: a fine corsa il pulsante sta verso il centro, dove il cerchio è largo.
+    Spacer(Modifier.height(g.d * 0.3f))
 }
 
 /**
@@ -128,7 +214,14 @@ fun TrainScreen(
  */
 private val PanelColors = BoardColors(board = Color.Black)
 
-private val AmbientColors = BoardColors.Oled.copy(ledOff = Color.Transparent, lampOff = Color.Transparent)
+private val AmbientColors = BoardColors.Oled.copy(
+    led = BoardColors.Oled.led.copy(alpha = 0.7f),
+    ledOff = Color.Transparent,
+    lampOff = Color.Transparent,
+)
+
+/** In ambient: meno pixel accesi (niente alone, etichette senza riquadro). */
+private val LocalAmbient = staticCompositionLocalOf { false }
 
 /** Righe sottili tra le righe del monitor. */
 private val RuleColor = Color(0xFF3C3E45)
@@ -169,11 +262,18 @@ private fun Monitor(snapshot: WatchSnapshot, nowMillis: Long, ambient: Boolean, 
             compactStatusText(snapshot, nowMillis),
             refreshing,
             g,
-            Modifier.align(Alignment.TopCenter).padding(top = g.d * 0.15f),
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = g.d * 0.15f),
         )
-        Row(Modifier.align(Alignment.Center).width(g.panel).height(IntrinsicSize.Min)) {
+        Row(Modifier
+            .align(Alignment.Center)
+            .width(g.panel)
+            .height(IntrinsicSize.Min)) {
             Column(
-                Modifier.width(g.left).fillMaxHeight(),
+                Modifier
+                    .width(g.left)
+                    .fillMaxHeight(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -193,6 +293,7 @@ private fun Monitor(snapshot: WatchSnapshot, nowMillis: Long, ambient: Boolean, 
                                 chars = MODULE_CHARS,
                                 pitch = g.pitch,
                                 marquee = if (ambient) Marquee.Off else Marquee.Auto,
+                                glow = !ambient,
                             )
                         }
                         Rule(g)
@@ -205,6 +306,7 @@ private fun Monitor(snapshot: WatchSnapshot, nowMillis: Long, ambient: Boolean, 
                                 chars = MODULE_CHARS,
                                 pitch = g.pitch,
                                 marquee = Marquee.Off,
+                                glow = !ambient,
                             )
                         }
                     }
@@ -218,14 +320,19 @@ private fun Monitor(snapshot: WatchSnapshot, nowMillis: Long, ambient: Boolean, 
                         infoText(snapshot),
                         chars = charsIn(g.middle + g.gap + g.right, g.infoPitch),
                         pitch = g.infoPitch,
-                        marquee = if (ambient) Marquee.Off else Marquee.Always,
+                        // Scorre solo se non entra: un testo fermo non chiede frame.
+                        marquee = if (ambient) Marquee.Off else Marquee.Auto,
+                        glow = !ambient,
                     )
                 }
             }
         }
         BasicText(
             (train?.stationName?.takeIf { it.isNotBlank() } ?: selection.station.name).uppercase(),
-            Modifier.align(Alignment.BottomCenter).padding(bottom = g.d * 0.13f).width(g.d * 0.6f),
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = g.d * 0.13f)
+                .width(g.d * 0.6f),
             style = TextStyle(
                 color = LocalBoardColors.current.label.copy(alpha = 0.6f),
                 fontSize = g.sp(8f),
@@ -242,10 +349,14 @@ private fun Monitor(snapshot: WatchSnapshot, nowMillis: Long, ambient: Boolean, 
 private fun TrainColumn(train: WatchedTrain?, number: String, ambient: Boolean, g: Geometry) {
     val logo = remember(train?.carrierLogoBase64) { train?.carrierLogoBase64?.let(::decodeLogo) }
     val inner = g.right - g.pitch * 2
-    Column(Modifier.width(g.right).fillMaxHeight()) {
+    Column(Modifier
+        .width(g.right)
+        .fillMaxHeight()) {
         LabelRow(stringResource(R.string.label_train), g)
         Column(
-            Modifier.weight(1f).fillMaxWidth()
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
                 .background(LocalBoardColors.current.module)
                 .padding(g.pitch),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -266,6 +377,7 @@ private fun TrainColumn(train: WatchedTrain?, number: String, ambient: Boolean, 
                     chars = chars,
                     pitch = inner / dots(chars),
                     marquee = if (ambient) Marquee.Off else Marquee.Auto,
+                    glow = !ambient,
                 )
             }
             // Come sul monitor, categoria e numero attaccati: "R91831".
@@ -276,6 +388,7 @@ private fun TrainColumn(train: WatchedTrain?, number: String, ambient: Boolean, 
                 chars = chars,
                 pitch = minOf(g.pitch * 1.2f, inner / dots(chars)),
                 marquee = Marquee.Off,
+                glow = !ambient,
             )
         }
     }
@@ -349,12 +462,16 @@ private fun AnalogClock(nowMillis: Long, ambient: Boolean, modifier: Modifier = 
 /** Punto a distanza [radius] dal centro, con l'angolo [angle] contato dalle 12 in senso orario. */
 private fun polar(angle: Float, radius: Float) = Offset(sin(angle) * radius, -cos(angle) * radius)
 
-/** Etichetta come sul monitor: parola in grassetto bianco su un riquadro scuro. */
+/** Etichetta come sul monitor: parola in grassetto bianco su un riquadro scuro (in ambient senza). */
 @Composable
 private fun Label(text: String, g: Geometry) {
+    val pill = if (LocalAmbient.current) Color.Transparent else LabelPill
     BasicText(
         text,
-        Modifier.clip(RoundedCornerShape(g.unit * 2)).background(LabelPill).padding(horizontal = g.unit * 3),
+        Modifier
+            .clip(RoundedCornerShape(g.unit * 2))
+            .background(pill)
+            .padding(horizontal = g.unit * 3),
         style = TextStyle(
             color = LocalBoardColors.current.label,
             fontSize = g.sp(10f),
@@ -368,7 +485,9 @@ private fun Label(text: String, g: Geometry) {
 @Composable
 private fun LabelRow(text: String, g: Geometry, end: @Composable () -> Unit = {}) {
     Row(
-        Modifier.fillMaxWidth().padding(bottom = g.labelGap),
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = g.labelGap),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -380,12 +499,18 @@ private fun LabelRow(text: String, g: Geometry, end: @Composable () -> Unit = {}
 /** Il modulo LED: riquadro antracite con i LED spenti appena visibili. */
 @Composable
 private fun Module(g: Geometry, pitch: Dp = g.pitch, content: @Composable () -> Unit) {
-    Box(Modifier.background(LocalBoardColors.current.module).padding(pitch)) { content() }
+    Box(Modifier
+        .background(LocalBoardColors.current.module)
+        .padding(pitch)) { content() }
 }
 
 @Composable
 private fun Rule(g: Geometry) {
-    Box(Modifier.padding(vertical = g.ruleGap).fillMaxWidth().height(1.dp).background(RuleColor))
+    Box(Modifier
+        .padding(vertical = g.ruleGap)
+        .fillMaxWidth()
+        .height(1.dp)
+        .background(RuleColor))
 }
 
 /**
@@ -399,8 +524,14 @@ internal fun WatchSnapshot.liveTrain(): WatchedTrain? = train.takeIf { status ==
 private fun Lamp(blinking: Boolean, size: Dp) {
     val ticker = LocalLedTicker.current
     val colors = LocalBoardColors.current
-    val on = !blinking || ticker == null || (ticker.value / LAMP_PHASE_MILLIS) % 2 == 0L
-    Box(Modifier.size(size).clip(CircleShape).background(if (on) colors.led else colors.lampOff))
+    // Il ticker scatta ogni 100 ms, la spia ogni 600: si ricompone solo quando cambia.
+    val on by remember(ticker, blinking) {
+        derivedStateOf { !blinking || ticker == null || (ticker.value / LAMP_PHASE_MILLIS) % 2 == 0L }
+    }
+    Box(Modifier
+        .size(size)
+        .clip(CircleShape)
+        .background(if (on) colors.led else colors.lampOff))
 }
 
 private const val LAMP_PHASE_MILLIS = 600L
@@ -436,19 +567,21 @@ internal fun infoText(snapshot: WatchSnapshot): String = when (snapshot.status) 
     WatchStatus.OnBoard -> snapshot.train?.info?.takeIf { it.isNotBlank() } ?: snapshot.train?.stationName.orEmpty()
 }
 
-/** Quando è stato aggiornato, sopra il monitor; con la rotellina mentre aggiorna. */
+/**
+ * Quando è stato aggiornato, sopra il monitor; "aggiornamento…" mentre aggiorna, senza rotellina:
+ * un'animazione continua chiederebbe un frame a ogni vsync per tutta l'attesa del telefono.
+ */
 @Composable
 private fun StatusLine(text: String, refreshing: Boolean, g: Geometry, modifier: Modifier) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        if (refreshing) {
-            CircularProgressIndicator(Modifier.size(g.unit * 10))
-            Spacer(Modifier.width(g.unit * 4))
-        }
-        BasicText(text, style = TextStyle(color = Color(0xFFB0B0B0), fontSize = g.sp(9f)), maxLines = 1)
-    }
+    BasicText(
+        if (refreshing) "aggiornamento…" else text,
+        modifier,
+        style = TextStyle(color = Color(0xFFB0B0B0), fontSize = g.sp(9f)),
+        maxLines = 1,
+    )
 }
 
-/** Stato corto, per il monitor e per il tile: "aggiornato 3 min fa", "12 min fa · senza rete". */
+/** Stato corto, per il monitor: "aggiornato 3 min fa", "12 min fa · senza rete". */
 internal fun compactStatusText(snapshot: WatchSnapshot, nowMillis: Long): String {
     val reason = when (snapshot.offline) {
         WatchOffline.NoNetwork -> "senza rete"
@@ -461,6 +594,26 @@ internal fun compactStatusText(snapshot: WatchSnapshot, nowMillis: Long): String
     return if (reason == null) "aggiornato $age" else "$age · $reason"
 }
 
+/**
+ * Stato del tile: l'ora assoluta dell'aggiornamento ("agg. 19:12", con il motivo se offline), che
+ * non invecchia e quindi non obbliga a ridisegnare il tile.
+ */
+internal fun tileStatusText(
+    snapshot: WatchSnapshot,
+    zone: ZoneId = ZoneId.systemDefault()
+): String {
+    val reason = when (snapshot.offline) {
+        WatchOffline.NoNetwork -> "senza rete"
+        WatchOffline.NoInternet -> "senza internet"
+        null -> null
+    }
+    if (snapshot.updatedAt == 0L) return reason ?: "in attesa"
+    val time = Instant.ofEpochMilli(snapshot.updatedAt).atZone(zone).format(CLOCK)
+    return listOfNotNull("agg. $time", reason).joinToString(" · ")
+}
+
+private val CLOCK = DateTimeFormatter.ofPattern("HH:mm")
+
 @Composable
 private fun NoSelection(g: Geometry, onOpenPhone: () -> Unit, ambient: Boolean) {
     Column(
@@ -470,7 +623,13 @@ private fun NoSelection(g: Geometry, onOpenPhone: () -> Unit, ambient: Boolean) 
     ) {
         val pitch = g.d * 0.6f / (dots(12) + 2)
         Module(g, pitch) {
-            DotMatrixText("NESSUN TRENO", chars = 12, pitch = pitch, align = DotAlign.Center)
+            DotMatrixText(
+                "NESSUN TRENO",
+                chars = 12,
+                pitch = pitch,
+                align = DotAlign.Center,
+                glow = !ambient
+            )
         }
         BasicText(
             "Scegli il treno da seguire nelle impostazioni dell'app sul telefono",

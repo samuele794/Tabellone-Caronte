@@ -15,20 +15,39 @@ import com.takaotech.departureboard.watch.WatchSelection
 import com.takaotech.departureboard.watch.WatchSnapshot
 import com.takaotech.departureboard.watch.WatchStatus
 import com.takaotech.departureboard.watch.WatchedTrain
+import com.takaotech.departureboard.wear.data.ActiveSurfaces
+import com.takaotech.departureboard.wear.data.RefreshWorker
 import com.takaotech.departureboard.wear.ui.TrainActivity
 import com.takaotech.departureboard.wear.wearApp
+import kotlinx.coroutines.launch
 
 /**
  * Il treno seguito sul quadrante: breve "19:18" con "+5'", lunga "R 91831 VIGNOLA 19:18 +5' BIN 7".
- * Il sistema la chiede al più ogni 5 minuti; in più la si aggiorna a ogni dato nuovo.
+ * Il sistema non la chiede a intervalli: la si ridisegna solo quando il treno cambia, e finché è
+ * sul quadrante [RefreshWorker] aggiorna il treno attorno alla partenza.
  */
 class TrainComplicationService : SuspendingComplicationDataSourceService() {
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
         val app = wearApp
-        val snapshot = app.refresher.store.load()
-        app.refresher.refreshIfStale(snapshot)
-        return data(request.complicationType, snapshot)
+        // Complication aggiunte prima che ci fosse l'attivazione: si segnano alla prima richiesta.
+        if (app.surfaces.add(ActiveSurfaces.complication(request.complicationInstanceId))) {
+            RefreshWorker.schedule(app)
+        }
+        return data(request.complicationType, app.refresher.store.load())
+    }
+
+    override fun onComplicationActivated(complicationInstanceId: Int, type: ComplicationType) {
+        val app = wearApp
+        if (app.surfaces.add(ActiveSurfaces.complication(complicationInstanceId))) {
+            app.scope.launch { RefreshWorker.schedule(app) }
+        }
+    }
+
+    override fun onComplicationDeactivated(complicationInstanceId: Int) {
+        val app = wearApp
+        app.surfaces.remove(ActiveSurfaces.complication(complicationInstanceId))
+        app.scope.launch { RefreshWorker.schedule(app) }
     }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? = data(type, Preview)

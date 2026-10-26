@@ -413,9 +413,10 @@ Diagnosi: `adb logcat -s AndroidTts Annunci libc`.
 
 ## Smartwatch (Wear OS)
 
-Sul watch non c'è il tabellone intero ma **un solo treno**, con la grafica dei monitor di binario:
-etichette bianche (solo in italiano, per lasciare spazio ai LED), testo LED ambra, binario in un
-riquadro chiaro, informazioni che scorrono. Il treno si sceglie sul telefono, in Impostazioni →
+Sul watch non c'è il tabellone intero ma **un solo treno**, con la disposizione del monitor di
+binario di Bologna: binario e orologio a sinistra, destinazione e partenza al centro, impresa e
+numero a destra, informazioni che scorrono in basso; etichette solo in italiano, pannello nero. Il
+treno si sceglie sul telefono, in Impostazioni →
 **Smartwatch**: prima la stazione (indipendente da quella del tabellone), poi uno dei treni in
 partenza. Si segue il **numero**, ogni giorno: quando il treno non è sul monitor il watch mostra
 "in attesa" con l'ultimo orario visto.
@@ -434,11 +435,12 @@ I dati arrivano in modo **ibrido**, perché non tutti i watch hanno connettivit�
 2. **Dal watch**, solo se il telefono non è raggiungibile e il watch ha **davvero** internet: chiede
    una rete Wi-Fi/LTE, la vuole validata dal sistema e senza portale di accesso, e prima di scaricare
    fa una richiesta di prova al fornitore (`WatchNetwork`). Il download usa la stessa rete.
-3. **Senza nessuna delle due** resta l'ultimo dato, con "ultimo aggiornamento N min fa · senza rete"
-   (o "senza internet").
+3. **Senza nessuna delle due** resta l'ultimo dato, con "N min fa · senza rete" (o "senza
+   internet").
 
-L'app aggiorna ogni 30 s mentre è aperta (non in ambient); tile e complication rispondono subito con
-l'ultimo dato e, se ha più di 4 minuti, ne chiedono uno nuovo.
+Per la batteria si aggiorna solo attorno alla partenza (da 90 minuti prima a 20 dopo), più spesso
+man mano che il treno si avvicina; in background solo se c'è un tile o una complication. Tutte le
+regole, con gli intervalli, sono in [docs/smartwatch.md](docs/Smartwatch.md).
 
 Telefono e watch devono avere lo stesso `applicationId` (`com.takaotech.departureboard`) e la stessa
 firma: `wearApp` legge le stesse credenziali di `signing/credential.properties`. Il `versionCode` del

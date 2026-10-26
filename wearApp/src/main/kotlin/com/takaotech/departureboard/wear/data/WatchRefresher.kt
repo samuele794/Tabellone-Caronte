@@ -26,13 +26,11 @@ import com.takaotech.departureboard.watch.decodeWatchSelection
 import com.takaotech.departureboard.wear.complication.TrainComplicationService
 import com.takaotech.departureboard.wear.net.WatchNetwork
 import com.takaotech.departureboard.wear.tile.TrainTileService
-import com.takaotech.departureboard.wear.wearApp
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
@@ -71,38 +69,51 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
         fetchJs = { checkNotNull(fnmClient) { "Nessuna rete per la chiave Trenord" }.webComponentsJs() },
     )
 
-    /** Aggiorna il treno seguito; uno solo alla volta, chi arriva durante attende quello in corso. */
-    suspend fun refresh() {
+    /**
+     * Aggiorna il treno seguito; uno solo alla volta, chi arriva durante attende quello in corso.
+     * Se non lo chiede l'utente ([RefreshTrigger.Manual]) parte solo quando [RefreshPolicy] dice
+     * che è ora, e la rete del watch si prova al più ogni [DIRECT_MIN].
+     */
+    suspend fun refresh(trigger: RefreshTrigger) {
         if (refreshing.isLocked) {
             refreshing.withLock { }
             return
         }
         refreshing.withLock {
+            val snapshot = store.load()
+            val selection = snapshot.selection ?: return
+            val now = System.currentTimeMillis()
+            if (trigger != RefreshTrigger.Manual) {
+                val due =
+                    RefreshPolicy.nextRefreshAt(snapshot, now, trigger == RefreshTrigger.Foreground)
+                if (due == null || due > now) return
+            }
             busy.value = true
             try {
-                val selection = store.load().selection ?: return
                 if (askPhone()) return
+                // Wi-Fi e LTE costano molto più del Bluetooth: non a ogni giro.
+                if (trigger != RefreshTrigger.Manual && now - snapshot.lastAttemptAt < DIRECT_MIN.inWholeMilliseconds) {
+                    DebugLog.d(TAG) { "Rete del watch provata da poco, si attende" }
+                    return
+                }
                 val outcome = network.withInternet(probeUrl(selection.source)) { http -> direct(selection, http) }
                 when (outcome) {
                     is WatchNetwork.Outcome.Online -> applyTrain(outcome.value)
                     is WatchNetwork.Outcome.Offline -> save { latest ->
-                        if (latest.selection == selection) latest.copy(offline = outcome.reason) else latest
+                        if (latest.selection == selection) {
+                            latest.copy(
+                                offline = outcome.reason,
+                                attemptedAt = System.currentTimeMillis()
+                            )
+                        } else {
+                            latest
+                        }
                     }
                 }
             } finally {
                 busy.value = false
             }
         }
-    }
-
-    /**
-     * Per tile e complication, che devono rispondere subito: se [snapshot] è più vecchio di
-     * [STALE_AFTER] fa partire un aggiornamento in background, che arrivando le ridisegna.
-     */
-    fun refreshIfStale(snapshot: WatchSnapshot) {
-        if (snapshot.selection == null || busy.value) return
-        if (System.currentTimeMillis() - snapshot.updatedAt < STALE_AFTER.inWholeMilliseconds) return
-        context.wearApp.scope.launch { refresh() }
     }
 
     /**
@@ -211,18 +222,25 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
         if (snapshot.selection == latest.selection) snapshot.after(latest) else latest
     }
 
+    /** Salva e fa ridisegnare tile e complication, ma solo se quello che mostrano è cambiato. */
     private suspend fun save(transform: (WatchSnapshot) -> WatchSnapshot) {
-        store.update(transform)
-        updateSurfaces()
+        var before: WatchSnapshot? = null
+        var after: WatchSnapshot? = null
+        store.update { latest -> transform(latest).also { before = latest; after = it } }
+        val old = before ?: return
+        val new = after ?: return
+        // Il tile mostra anche l'ora dell'aggiornamento; la complication solo il treno.
+        if (old.copy(attemptedAt = 0) != new.copy(attemptedAt = 0)) {
+            TileService.getUpdater(context).requestUpdate(TrainTileService::class.java)
+        }
+        if (old.complicationContent() != new.complicationContent()) {
+            ComplicationDataSourceUpdateRequester
+                .create(context, ComponentName(context, TrainComplicationService::class.java))
+                .requestUpdateAll()
+        }
     }
 
-    /** Tile e complication rileggono lo store. */
-    private fun updateSurfaces() {
-        TileService.getUpdater(context).requestUpdate(TrainTileService::class.java)
-        ComplicationDataSourceUpdateRequester
-            .create(context, ComponentName(context, TrainComplicationService::class.java))
-            .requestUpdateAll()
-    }
+    private fun WatchSnapshot.complicationContent() = Triple(selection, train, status)
 
     private fun DataMap.snapshot(): WatchSnapshot? = getString(WatchPaths.KEY_JSON)?.let(WatchSnapshot::decode)
 
@@ -234,10 +252,13 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
     companion object {
         const val TAG = "Smartwatch"
 
-        /** Età oltre la quale tile e complication chiedono un aggiornamento. */
-        val STALE_AFTER = 4.minutes
+        /** Attesa minima tra due prove della rete del watch, se non le chiede l'utente. */
+        val DIRECT_MIN = 5.minutes
 
         /** Quanto attendere la risposta del telefono prima di provare da soli. */
         val PHONE_TIMEOUT = 30.seconds
     }
 }
+
+/** Chi chiede l'aggiornamento: l'utente lo vuole subito, gli altri seguono [RefreshPolicy]. */
+enum class RefreshTrigger { Manual, Foreground, Background }

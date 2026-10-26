@@ -52,7 +52,25 @@ class TrainTextsTest {
     }
 
     @Test
-    fun `stato compatto per il tile`() {
+    fun `stato del tile con l'ora assoluta`() {
+        val zone = java.time.ZoneId.of("Europe/Rome")
+        val at = java.time.LocalDateTime.parse("2026-10-26T19:12").atZone(zone).toInstant()
+            .toEpochMilli()
+        val snapshot = WatchSnapshot(selection, train, WatchStatus.OnBoard, updatedAt = at)
+        assertEquals("agg. 19:12", tileStatusText(snapshot, zone))
+        assertEquals(
+            "agg. 19:12 · senza internet",
+            tileStatusText(snapshot.copy(offline = WatchOffline.NoInternet), zone)
+        )
+        assertEquals("in attesa", tileStatusText(WatchSnapshot(selection), zone))
+        assertEquals(
+            "senza rete",
+            tileStatusText(WatchSnapshot(selection, offline = WatchOffline.NoNetwork), zone)
+        )
+    }
+
+    @Test
+    fun `stato compatto per il monitor`() {
         val at = 1_000_000L
         val snapshot = WatchSnapshot(selection, train, WatchStatus.OnBoard, updatedAt = at)
         assertEquals("aggiornato adesso", compactStatusText(snapshot, at))

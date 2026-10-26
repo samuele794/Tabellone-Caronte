@@ -91,13 +91,15 @@ val LocalLedTicker = staticCompositionLocalOf<State<Long>?> { null }
 
 /**
  * Orologio a scatti di [stepMillis] per [LocalLedTicker]. Si ferma mentre l'app non è visibile
- * (sotto [Lifecycle.State.STARTED]), così in background non sveglia la CPU 10 volte al secondo.
+ * (sotto [Lifecycle.State.STARTED]), così in background non sveglia la CPU 10 volte al secondo,
+ * e quando [running] è false (l'ambient dello smartwatch, dove nulla scorre).
  */
 @Composable
-fun rememberLedTicker(stepMillis: Long = 100): State<Long> {
+fun rememberLedTicker(stepMillis: Long = 100, running: Boolean = true): State<Long> {
     val millis = remember { mutableLongStateOf(0L) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(stepMillis, lifecycle) {
+    LaunchedEffect(stepMillis, lifecycle, running) {
+        if (!running) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 delay(stepMillis)
@@ -185,6 +187,7 @@ internal fun ledTiles(
     offColor: Color,
     lit: List<Offset>,
     color: Color,
+    glow: Boolean = true,
 ): List<LedTile> {
     val width = ceil(cols * pitchPx).toInt().coerceAtLeast(1)
     val height = ceil(rows * pitchPx).toInt().coerceAtLeast(1)
@@ -202,7 +205,7 @@ internal fun ledTiles(
                     offColor,
                     glow = false
                 )
-                drawLeds(near, pitchPx, color)
+                drawLeds(near, pitchPx, color, glow)
             }
         })
     }

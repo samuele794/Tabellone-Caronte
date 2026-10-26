@@ -11,4 +11,8 @@
     <string name="label_delay">ritardo</string>
     <string name="label_platform">binario</string>
     <string name="label_info">informazioni</string>
+
+    <!-- Pulsante sotto il monitor, che si raggiunge scorrendo. -->
+    <string name="refresh">Aggiorna</string>
+    <string name="refreshing">Aggiornamento…</string>
 </resources>

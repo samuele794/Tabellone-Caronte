@@ -19,6 +19,11 @@ data class WatchSelection(
     val trainNumber: String,
     /** "R 91831 → VIGNOLA": si mostra anche quando il treno non è (ancora) in tabellone. */
     val label: String,
+    /**
+     * Orario programmato quando è stato scelto, "HH:MM": il watch sa quando controllarlo anche
+     * prima di averlo visto in tabellone. null nelle selezioni salvate prima che ci fosse.
+     */
+    val time: String? = null,
 ) {
     companion object {
         fun of(source: StationSource, station: Station, train: WatchedTrain) = WatchSelection(
@@ -26,6 +31,7 @@ data class WatchSelection(
             station = station,
             trainNumber = train.number,
             label = "${train.category} ${train.number} → ${train.destination}",
+            time = train.time,
         )
     }
 }
@@ -112,7 +118,12 @@ data class WatchSnapshot(
     val error: String? = null,
     /** Perché l'ultimo tentativo non è partito; null se è partito (o non ce n'è stato). */
     val offline: WatchOffline? = null,
+    /** Ultimo tentativo non partito ([offline]), in millisecondi dall'epoch; 0 se non ce n'è. */
+    val attemptedAt: Long = 0,
 ) {
+    /** Ultimo tentativo, riuscito o no: da qui il watch conta l'attesa per il prossimo. */
+    val lastAttemptAt: Long get() = maxOf(updatedAt, attemptedAt)
+
     /**
      * Questo controllo, tenendo da [previous] il treno visto l'ultima volta se ora non c'è e la
      * selezione è la stessa.

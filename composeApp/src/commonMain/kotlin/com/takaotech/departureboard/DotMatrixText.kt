@@ -50,6 +50,8 @@ fun DotMatrixText(
      * modulo mostra solo quelli spenti. Va letto al disegno, così non ricompone.
      */
     lit: (() -> Boolean)? = null,
+    /** Alone attorno ai LED accesi; senza, meno pixel accesi (ambient degli OLED). */
+    glow: Boolean = true,
 ) {
     val run = remember(text) { DotMatrixFont.layout(text) }
     val boxCols = DotMatrixFont.widthOf(chars)
@@ -70,11 +72,11 @@ fun DotMatrixText(
     // Chi scorre usa una striscia lunga un periodo (testo + spazio), LED spenti compresi:
     // si sposta a colonne intere, quindi la griglia resta identica.
     val stripCols = if (scrolling) period else boxCols
-    val leds = rememberLedTiles(run, startCols, stripCols, p, offColor, color) {
+    val leds = rememberLedTiles(run, startCols, stripCols, p, offColor, color, glow) {
         val lit = List(run.size) { i ->
             Offset((startCols + run.xs[i] + 0.5f) * p, (run.ys[i] + 0.5f) * p)
         }
-        ledTiles(stripCols, DotMatrixFont.ROWS, p, offColor, lit, color)
+        ledTiles(stripCols, DotMatrixFont.ROWS, p, offColor, lit, color, glow)
     }
     val blank = if (lit != null) {
         rememberLedTiles(boxCols, p, offColor) {

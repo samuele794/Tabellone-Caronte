@@ -5,13 +5,13 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.concurrent.futures.await
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.concurrent.futures.await
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -21,12 +21,14 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.remote.interactions.RemoteActivityHelper
 import com.takaotech.departureboard.debuglog.DebugLog
 import com.takaotech.departureboard.watch.WatchSnapshot
+import com.takaotech.departureboard.wear.data.RefreshPolicy
+import com.takaotech.departureboard.wear.data.RefreshTrigger
 import com.takaotech.departureboard.wear.data.WatchRefresher
 import com.takaotech.departureboard.wear.wearApp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlin.time.Duration.Companion.seconds
 
 class TrainActivity : ComponentActivity() {
 
@@ -63,17 +65,27 @@ class TrainActivity : ComponentActivity() {
             val scope = rememberCoroutineScope()
             val lifecycle = LocalLifecycleOwner.current.lifecycle
             LaunchedEffect(Unit) { refresher.syncFromPhone() }
-            // Mentre si guarda (e non in ambient) si aggiorna ogni REFRESH_INTERVAL.
+            // Mentre si guarda (e non in ambient) si aggiorna nei tempi di RefreshPolicy, contati
+            // dall'ultimo aggiornamento: alzare il polso non ne fa partire uno se il dato è fresco.
             LaunchedEffect(ambient, lifecycle) {
                 if (ambient) return@LaunchedEffect
                 lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                    while (true) {
-                        refresher.refresh()
-                        delay(REFRESH_INTERVAL)
+                    refresher.store.snapshot.collectLatest { latest ->
+                        val start = System.currentTimeMillis()
+                        val at = RefreshPolicy.nextRefreshAt(latest, start, foreground = true)
+                            ?: return@collectLatest
+                        delay((at - start).coerceAtLeast(0))
+                        // Un dato nuovo riavvia il giro; senza (telefono e rete assenti) si riprova.
+                        while (true) {
+                            refresher.refresh(RefreshTrigger.Foreground)
+                            delay(RefreshPolicy.NEAR_FOREGROUND)
+                        }
                     }
                 }
             }
-            LaunchedEffect(Unit) {
+            // L'orologio del monitor; in ambient lo fa avanzare onUpdateAmbient.
+            LaunchedEffect(ambient) {
+                if (ambient) return@LaunchedEffect
                 while (true) {
                     now = System.currentTimeMillis()
                     delay(MINUTE_MILLIS - now % MINUTE_MILLIS)
@@ -87,7 +99,7 @@ class TrainActivity : ComponentActivity() {
                         nowMillis = now,
                         ambient = ambient,
                         refreshing = refreshing,
-                        onRefresh = { scope.launch { refresher.refresh() } },
+                        onRefresh = { scope.launch { refresher.refresh(RefreshTrigger.Manual) } },
                         onOpenPhone = { scope.launch { openOnPhone() } },
                     )
                 }
@@ -109,8 +121,6 @@ class TrainActivity : ComponentActivity() {
     }
 
     private companion object {
-        val REFRESH_INTERVAL = 30.seconds
-
         const val MINUTE_MILLIS = 60_000L
 
         /** Intent filter di MainActivity nell'app telefono. */
