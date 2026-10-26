@@ -11,7 +11,7 @@ grafica dei monitor di binario RFI
 - Il treno è **ricorrente**: si segue il suo numero ogni giorno, finché non se ne sceglie un altro.
 - La selezione porta con sé l' **orario programmato**. Così il watch sa quando controllare il treno
   anche prima di averlo visto in tabellone.
-- Se nessuno smartwatch è collegato, la sezione lo segnala.
+- Se nessuno smartwatch è collegato, la pagina lo segnala.
 - Sul watch non si sceglie nulla. Senza un treno scelto l'app mostra "NESSUN TRENO" e un pulsante
   che apre l'app sul telefono.
 

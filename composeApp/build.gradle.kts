@@ -38,6 +38,7 @@ kotlin {
             api(libs.compose.material3)
             implementation(libs.compose.components.resources)
             implementation(libs.lifecycle.runtime.compose)
+            implementation(libs.navigation3.ui)
             implementation(libs.ktor.client.core)
             implementation(libs.ksoup)
             api(libs.kotlinx.datetime)

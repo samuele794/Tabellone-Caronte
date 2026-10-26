@@ -270,9 +270,16 @@ usa Share Tech Mono (OFL, `files/licenses/ShareTechMono-OFL.txt`).
 ## Dati live (RFI)
 
 `./gradlew run` apre il tabellone collegato a
-[iechub.rfi.it](https://iechub.rfi.it/arrivipartenze) a tutto schermo. La rotella in alto a
-destra apre le impostazioni: stazione (un dialog con ricerca sulle circa 2400 località del menu
-`ElencoLocalita`), **Partenze**/**Arrivi** e scorrimento automatico. La pagina
+[iechub.rfi.it](https://iechub.rfi.it/arrivipartenze) a tutto schermo. La rotella in alto a destra
+apre le impostazioni, una pagina al posto del tabellone. In quella principale ci sono la stazione
+(un dialog con ricerca sulle circa 2400 località del menu `ElencoLocalita`), **Partenze**/
+**Arrivi**, più il menu delle altre pagine:
+**Audio** (annunci, sottofondo, palette e i loro volumi), **Aspetto e risparmio energetico** (LED o
+palette, scorrimento automatico, intro, cruscotto, modalità risparmio, fondo nero, schermo acceso),
+**Smartwatch** e **Aggiornamento** (ogni quanto si rilegge il tabellone, per fornitore). Indietro,
+con la freccia o con il gesto di sistema (predittivo su Android), torna alla pagina principale e da
+lì al tabellone. La navigazione usa Navigation 3 (`NavDisplay`): il tabellone è la radice del back
+stack, le pagine delle impostazioni gli si impilano sopra. La pagina
 `ArrivalsDepartures/Monitor?placeId=…&arrivals=…` viene riletta ogni 30 s; l'ora dell'ultimo
 aggiornamento compare accanto alla rotella e la stazione nella seconda riga della fascia
 inferiore. Se la rete manca restano gli ultimi dati e l'errore compare nelle impostazioni.
@@ -558,15 +565,16 @@ Nel package `intro`, in `composeApp/src/commonMain`:
 
 Applicazione:
 
-| Source set                  | File                      | Contenuto                                                                                                    |
-|-----------------------------|---------------------------|--------------------------------------------------------------------------------------------------------------|
-| `composeApp/src/commonMain` | `live/LiveBoard.kt`       | Stato e UI del tabellone live: dialog impostazioni e scelta stazione, refresh, orologio (`kotlinx-datetime`) |
-| `composeApp/src/jvmMain`    | `Main.kt`                 | Finestra desktop (Nucleus, Tao), `--snapshot`, `--intro-snapshot`, `--bench`, `--announce`, `--clatter`      |
-| `composeApp/src/wasmJsMain` | `Main.kt`                 | Pagina web: proxy, store su `localStorage`, sblocco audio al primo gesto                                     |
-| `androidApp/src/main`       | `android/MainActivity.kt` | Activity Android                                                                                             |
-| `androidApp/src/main`       | `android/DepartureBoardApp.kt` | Servizi del processo (cache, impostazioni, fornitori) condivisi da Activity e smartwatch                 |
-| `androidApp/src/main`       | `android/watch/`          | `PhoneWatchSync` (DataItem verso il watch), `WatchListenerService` (risponde a `/watch/refresh`)             |
-| `wearApp/src/main`          | `wear/`                   | App Wear OS: `data/WatchRefresher` (strategia ibrida), `net/WatchNetwork`, `ui/`, `tile/`, `complication/`   |
+| Source set                  | File                           | Contenuto                                                                                                                         |
+|-----------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `composeApp/src/commonMain` | `live/LiveBoard.kt`            | Stato e UI del tabellone live: refresh, orologio (`kotlinx-datetime`)                                                             |
+| `composeApp/src/commonMain` | `live/Settings.kt`             | Pagine delle impostazioni (principale, Audio, Aspetto e risparmio energetico, Smartwatch, Aggiornamento), scelta stazione e treno |
+| `composeApp/src/jvmMain`    | `Main.kt`                      | Finestra desktop (Nucleus, Tao), `--snapshot`, `--intro-snapshot`, `--bench`, `--announce`, `--clatter`                           |
+| `composeApp/src/wasmJsMain` | `Main.kt`                      | Pagina web: proxy, store su `localStorage`, sblocco audio al primo gesto                                                          |
+| `androidApp/src/main`       | `android/MainActivity.kt`      | Activity Android                                                                                                                  |
+| `androidApp/src/main`       | `android/DepartureBoardApp.kt` | Servizi del processo (cache, impostazioni, fornitori) condivisi da Activity e smartwatch                                          |
+| `androidApp/src/main`       | `android/watch/`               | `PhoneWatchSync` (DataItem verso il watch), `WatchListenerService` (risponde a `/watch/refresh`)                                  |
+| `wearApp/src/main`          | `wear/`                        | App Wear OS: `data/WatchRefresher` (strategia ibrida), `net/WatchNetwork`, `ui/`, `tile/`, `complication/`                        |
 
 Nel package `watch`, in `composeApp/src/commonMain`, il codice comune a telefono e watch:
 `WatchModels.kt` (selezione, treno, snapshot e percorsi del Data Layer), `TrainTracker.kt` (cerca il

@@ -27,6 +27,7 @@ wear = "1.4.0"
 concurrent-futures = "1.3.0"
 play-services-wearable = "20.0.1"
 work = "2.12.0"
+navigation3 = "1.1.2"
 app-version = "1.2.0"
 app-versionCode = "3"
 
@@ -48,6 +49,7 @@ kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 datastore-core-okio = { module = "androidx.datastore:datastore-core-okio", version.ref = "datastore" }
 lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+navigation3-ui = { module = "org.jetbrains.androidx.navigation3:navigation3-ui", version.ref = "navigation3" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 jlayer = { module = "javazoom:jlayer", version.ref = "jlayer" }
 nucleus-application = { module = "dev.nucleusframework:nucleus.nucleus-application", version.ref = "nucleus" }
