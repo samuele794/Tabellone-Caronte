@@ -386,6 +386,16 @@ class LiveBoardState(
     suspend fun watchCandidates(source: StationSource, station: Station): List<WatchedTrain> =
         checkNotNull(watchSync) { "Smartwatch non disponibile" }.candidates(source, station)
 
+    /**
+     * Il treno seguito, scelto solo per numero, è comparso in tabellone ([seen]): se ne tengono
+     * etichetta e orario, qui, nelle impostazioni salvate e sul watch.
+     */
+    fun watchTrainSeen(seen: WatchSelection) {
+        val current = watchSelection ?: return
+        val completed = current.orDetailsOf(seen)
+        if (completed != current) watchSelection = completed
+    }
+
     private var introPlayingState by mutableStateOf(false)
 
     /**
@@ -829,6 +839,10 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
     LaunchedEffect(Unit) { state.restoreSettings() }
     LaunchedEffect(state) { state.duckSoundsDuringAnnouncements() }
     LaunchedEffect(state) { state.blinkAnnouncedRows() }
+    // Dopo il ripristino, che altrimenti riporterebbe la selezione salvata prima.
+    LaunchedEffect(state, state.restored) {
+        if (state.restored) state.watchSync?.completed?.collect { it?.let(state::watchTrainSeen) }
+    }
     LaunchedEffect(state.source, state.restored) {
         if (state.restored && state.stations(state.source).isEmpty()) state.loadStations()
     }

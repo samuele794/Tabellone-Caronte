@@ -7,10 +7,18 @@ grafica dei monitor di binario RFI
 
 - Si sceglie sul telefono, in Impostazioni → **Smartwatch**:
     1. la **stazione**, indipendente da quella del tabellone;
-    2. uno dei treni in partenza da lì, oppure "Nessuno".
+  2. uno dei treni in partenza da lì, oppure "Nessuno", oppure il **numero** di un treno scritto a
+     mano (anche uno che oggi non è ancora in tabellone, o quando le partenze non si leggono). Il
+     numero scritto filtra l'elenco; se il treno c'è, vale come sceglierlo dall'elenco.
 - Il treno è **ricorrente**: si segue il suo numero ogni giorno, finché non se ne sceglie un altro.
 - La selezione porta con sé l' **orario programmato**. Così il watch sa quando controllare il treno
   anche prima di averlo visto in tabellone.
+- Un treno scelto solo per numero non ha ancora destinazione né orario: l'etichetta è "Treno 91831"
+  e il watch lo controlla ogni 30 min (orario ignoto, §4). La **prima volta** che compare in
+  tabellone, etichetta e orario si prendono dal monitor e si salvano, sul telefono (impostazioni)
+  e sul watch; da lì in poi non cambiano più. Vale anche se a trovarlo è il watch da solo: il
+  telefono si allinea al suo prossimo controllo. Riscrivere il numero del treno già trovato non ne
+  perde i dati.
 - Se nessuno smartwatch è collegato, la pagina lo segnala.
 - Sul watch non si sceglie nulla. Senza un treno scelto l'app mostra "NESSUN TRENO" e un pulsante
   che apre l'app sul telefono.

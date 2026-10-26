@@ -73,7 +73,8 @@ class TrainTrackerTest {
     private fun boardOf(vararg trains: RfiTrain) =
         RfiBoard(bologna.name, BoardMode.Departures, trains.toList(), emptyList())
 
-    private val selection = WatchSelection(StationSource.Rfi, bologna, "91831", "R 91831 → VIGNOLA")
+    private val selection =
+        WatchSelection(StationSource.Rfi, bologna, "91831", "R 91831 → VIGNOLA", "19:18")
 
     @Test
     fun `il treno in tabellone arriva con ritardo, binario e informazioni`() = runBlocking {
@@ -107,6 +108,18 @@ class TrainTrackerTest {
         assertEquals(WatchStatus.NotOnBoard, snapshot.status)
         assertNull(snapshot.train)
         assertNull(snapshot.error)
+    }
+
+    @Test
+    fun `un treno scelto per numero prende etichetta e orario quando compare`() = runBlocking {
+        val chosen = WatchSelection.byNumber(StationSource.Rfi, bologna, "91831")
+
+        val waiting = tracker(FakeSource { boardOf(milano) }).track(chosen)
+        assertEquals(chosen, waiting.selection)
+
+        val seen = tracker(FakeSource { boardOf(milano, vignola) }).track(chosen)
+        assertEquals(WatchStatus.OnBoard, seen.status)
+        assertEquals(selection, seen.selection)
     }
 
     @Test

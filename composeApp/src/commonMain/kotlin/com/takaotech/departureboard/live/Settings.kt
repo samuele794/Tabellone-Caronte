@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,6 +60,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -386,6 +391,12 @@ private fun WatchSettings(state: LiveBoardState) {
         label = "Treno da seguire",
         onClick = { pickWatchTrain = watchSource to watchStation },
     )
+    if (watchSelection?.awaitingDetails == true) {
+        Text(
+            "Destinazione e orario arriveranno quando il treno comparirà in tabellone",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
     Text(
         if (connected) {
             "Lo stesso treno viene seguito ogni giorno"
@@ -417,8 +428,9 @@ private fun WatchSettings(state: LiveBoardState) {
             source,
             station,
             currentNumber = watchSelection?.takeIf { it.station == station }?.trainNumber,
-            onSelect = { train ->
-                state.watchSelection = train?.let { WatchSelection.of(source, station, it) }
+            onSelect = { selection ->
+                // Riscrivendo il numero del treno già trovato in tabellone non se ne perdono i dati.
+                state.watchSelection = selection?.orDetailsOf(watchSelection)
                 pickWatchTrain = null
             },
             onDismiss = { pickWatchTrain = null },
@@ -719,6 +731,9 @@ private fun StationDialog(
 /**
  * Treni in partenza da [station] tra cui scegliere quello da seguire sullo smartwatch, più
  * "Nessuno"; [currentNumber] è quello seguito adesso, se è di questa stazione.
+ *
+ * Il numero scritto filtra l'elenco; se il treno non c'è (non è ancora in tabellone, o le partenze
+ * non si leggono) lo si segue lo stesso, ed etichetta e orario arrivano quando compare.
  */
 @Composable
 private fun TrainDialog(
@@ -726,9 +741,11 @@ private fun TrainDialog(
     source: StationSource,
     station: Station,
     currentNumber: String?,
-    onSelect: (WatchedTrain?) -> Unit,
+    onSelect: (WatchSelection?) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var number by rememberSaveable { mutableStateOf("") }
+    val typed = number.trim().uppercase()
     var attempt by remember { mutableIntStateOf(0) }
     val trains by produceState<Result<List<WatchedTrain>>?>(null, source, station, attempt) {
         value = null
@@ -739,6 +756,16 @@ private fun TrainDialog(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    fun followTyped() {
+        if (typed.isEmpty()) return
+        // In elenco c'è già tutto; altrimenti i dati arrivano quando il treno compare.
+        val train = trains?.getOrNull()?.firstOrNull { it.number == typed }
+        onSelect(
+            if (train != null) WatchSelection.of(source, station, train)
+            else WatchSelection.byNumber(source, station, typed)
+        )
     }
 
     Dialog(
@@ -758,9 +785,34 @@ private fun TrainDialog(
                     Text("Treno da seguire", style = MaterialTheme.typography.headlineSmall)
                     Text(station.name, style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Treni in partenza nelle prossime ore; lo stesso numero viene seguito ogni giorno.",
+                        "Scegli tra le partenze delle prossime ore o scrivi il numero di un treno " +
+                                "che non c'è ancora: destinazione e orario arriveranno quando " +
+                                "comparirà in tabellone. Lo stesso numero viene seguito ogni giorno.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Row(
+                        Modifier.padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = number,
+                            onValueChange = { number = it },
+                            label = { Text("Numero del treno") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Characters,
+                                keyboardType = KeyboardType.Ascii,
+                                imeAction = ImeAction.Done,
+                            ),
+                            keyboardActions = KeyboardActions(onDone = { followTyped() }),
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(
+                            onClick = ::followTyped,
+                            enabled = typed.isNotEmpty()
+                        ) { Text("Segui") }
+                    }
                 }
                 HorizontalDivider()
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
@@ -769,24 +821,40 @@ private fun TrainDialog(
                     when {
                         result == null -> CircularProgressIndicator(Modifier.size(32.dp))
                         list == null -> Text(
-                            "Partenze non disponibili: ${result.exceptionOrNull()?.message ?: ""}",
+                            "Partenze non disponibili: ${result.exceptionOrNull()?.message ?: ""}. " +
+                                    "Si può comunque scrivere il numero del treno.",
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(24.dp),
                         )
 
                         else -> LazyColumn(Modifier.fillMaxSize()) {
-                            item {
+                            if (typed.isEmpty()) item {
                                 TrainItem("Nessuno", null, currentNumber == null) { onSelect(null) }
                             }
-                            items(list) { train ->
+                            items(list.filter { it.number.startsWith(typed) }) { train ->
                                 TrainItem(
                                     title = "${train.category} ${train.number} · ${train.time}",
                                     subtitle = train.destination,
                                     selected = train.number == currentNumber,
-                                    onClick = { onSelect(train) },
+                                    onClick = {
+                                        onSelect(
+                                            WatchSelection.of(
+                                                source,
+                                                station,
+                                                train
+                                            )
+                                        )
+                                    },
                                 )
                             }
                         }
+                    }
+                    if (list != null && typed.isNotEmpty() && list.none { it.number.startsWith(typed) }) {
+                        Text(
+                            "Non è tra le partenze: con «Segui» lo si aspetta",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(24.dp),
+                        )
                     }
                 }
                 HorizontalDivider()

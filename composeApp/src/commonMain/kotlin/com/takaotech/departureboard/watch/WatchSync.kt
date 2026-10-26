@@ -12,6 +12,12 @@ interface WatchSync {
     /** Se c'è almeno uno smartwatch con l'app, raggiungibile adesso. */
     val connected: StateFlow<Boolean>
 
+    /**
+     * Ultimo treno scelto per numero e poi trovato in tabellone, con etichetta e orario veri;
+     * null finché non ce n'è.
+     */
+    val completed: StateFlow<WatchSelection?>
+
     /** Il treno da seguire è cambiato (null = nessuno): va mandato al watch. */
     fun selectionChanged(selection: WatchSelection?)
 

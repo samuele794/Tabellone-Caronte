@@ -24,7 +24,11 @@ class TrainTracker(
         return board.trains.map { WatchedTrain.of(it, board.stationName) }
     }
 
-    /** Il treno di [selection] com'è adesso sul monitor; un errore finisce nello snapshot. */
+    /**
+     * Il treno di [selection] com'è adesso sul monitor; un errore finisce nello snapshot. Un treno
+     * scelto solo per numero, appena compare, porta nello snapshot la selezione completata
+     * ([WatchSelection.completedWith]).
+     */
     suspend fun track(selection: WatchSelection): WatchSnapshot {
         val train = try {
             val client = checkNotNull(sources[selection.source]) { "Fornitore ${selection.source} non disponibile" }
@@ -43,7 +47,7 @@ class TrainTracker(
             )
         }
         return WatchSnapshot(
-            selection = selection,
+            selection = train?.let(selection::completedWith) ?: selection,
             train = train,
             status = if (train != null) WatchStatus.OnBoard else WatchStatus.NotOnBoard,
             updatedAt = now(),

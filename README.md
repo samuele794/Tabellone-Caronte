@@ -425,8 +425,9 @@ binario di Bologna: binario e orologio a sinistra, destinazione e partenza al ce
 numero a destra, informazioni che scorrono in basso; etichette solo in italiano, pannello nero. Il
 treno si sceglie sul telefono, in Impostazioni →
 **Smartwatch**: prima la stazione (indipendente da quella del tabellone), poi uno dei treni in
-partenza. Si segue il **numero**, ogni giorno: quando il treno non è sul monitor il watch mostra
-"in attesa" con l'ultimo orario visto.
+partenza, oppure se ne scrive il numero (anche di un treno non ancora in tabellone: destinazione e
+orario si prendono dal monitor la prima volta che compare). Si segue il **numero**, ogni giorno:
+quando il treno non è sul monitor il watch mostra "in attesa" con l'ultimo orario visto.
 
 | Sul watch     | Cosa mostra                                                                               |
 |---------------|-------------------------------------------------------------------------------------------|

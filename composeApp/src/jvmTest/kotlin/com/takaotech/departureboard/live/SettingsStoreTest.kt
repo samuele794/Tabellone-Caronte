@@ -703,6 +703,7 @@ class SettingsStoreTest {
     /** Smartwatch finto: ricorda le selezioni ricevute. */
     private class FakeWatchSync : WatchSync {
         override val connected = MutableStateFlow(true)
+        override val completed = MutableStateFlow<WatchSelection?>(null)
         val sent = mutableListOf<WatchSelection?>()
 
         override fun selectionChanged(selection: WatchSelection?) {
@@ -738,6 +739,31 @@ class SettingsStoreTest {
             assertEquals(vignola, state.watchSelection)
             // Al ripristino la selezione si rimanda al watch, che potrebbe averla persa.
             assertEquals(listOf<WatchSelection?>(vignola), watch.sent)
+        }
+    }
+
+    @Test
+    fun `il treno scelto per numero prende i dati quando compare in tabellone`() = runBlocking {
+        SettingsStore(path).use { store ->
+            val watch = FakeWatchSync()
+            val state = LiveBoardState(sources, settingsStore = store, watchSync = watch)
+            state.restoreSettings()
+            val chosen = WatchSelection.byNumber(StationSource.Rfi, vignola.station, "91831")
+            state.watchSelection = chosen
+            val seen = vignola.copy(time = "19:18")
+
+            // Un altro treno non tocca la scelta.
+            state.watchTrainSeen(seen.copy(trainNumber = "1"))
+            assertEquals(chosen, state.watchSelection)
+
+            state.watchTrainSeen(seen)
+            assertEquals(seen, state.watchSelection)
+            assertEquals(listOf(null, chosen, seen), watch.sent)
+            store.awaitSaved(BoardSettings(Selection(StationSource.Rfi, milano), watch = seen))
+
+            // Già completato, non cambia più.
+            state.watchTrainSeen(seen.copy(label = "R 91831 → MODENA", time = "20:00"))
+            assertEquals(seen, state.watchSelection)
         }
     }
 

@@ -100,7 +100,7 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
                 when (outcome) {
                     is WatchNetwork.Outcome.Online -> applyTrain(outcome.value)
                     is WatchNetwork.Outcome.Offline -> save { latest ->
-                        if (latest.selection == selection) {
+                        if (selection.sameTrain(latest.selection)) {
                             latest.copy(
                                 offline = outcome.reason,
                                 attemptedAt = System.currentTimeMillis()
@@ -193,7 +193,10 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
         }
     }
 
-    /** Un DataItem arrivato dal telefono; true se ha cambiato il treno da seguire. */
+    /**
+     * Un DataItem arrivato dal telefono; true se ha cambiato il treno da seguire (non solo
+     * etichetta e orario dello stesso treno).
+     */
     suspend fun onDataItem(path: String?, map: DataMap): Boolean = when (path) {
         WatchPaths.SELECTION -> applySelection(map)
         WatchPaths.TRAIN -> {
@@ -208,18 +211,22 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
         val selection = map.getString(WatchPaths.KEY_JSON)?.let(::decodeWatchSelection)
         var changed = false
         save { latest ->
-            changed = latest.selection != selection
+            changed =
+                latest.selection != selection && selection?.sameTrain(latest.selection) != true
             latest.withSelection(selection)
         }
         return changed
     }
 
     /**
-     * Un controllo, dal telefono o da qui. Vale solo per la selezione attuale: un DataItem vecchio
-     * di un altro treno non deve riportarla indietro.
+     * Un controllo, dal telefono o da qui. Vale solo per il treno seguito adesso: un DataItem
+     * vecchio di un altro treno non deve riportarlo indietro. Dello stesso treno può portare
+     * etichetta e orario, se era stato scelto solo per numero ed è comparso in tabellone.
      */
     private suspend fun applyTrain(snapshot: WatchSnapshot) = save { latest ->
-        if (snapshot.selection == latest.selection) snapshot.after(latest) else latest
+        val sameTrain =
+            snapshot.selection == latest.selection || snapshot.selection?.sameTrain(latest.selection) == true
+        if (sameTrain) snapshot.after(latest) else latest
     }
 
     /** Salva e fa ridisegnare tile e complication, ma solo se quello che mostrano è cambiato. */

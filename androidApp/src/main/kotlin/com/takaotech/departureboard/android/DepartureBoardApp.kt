@@ -56,5 +56,5 @@ class AppServices(app: Application) {
         ).associateBy { it.source }
     )
 
-    val watchSync = PhoneWatchSync(app, trainTracker)
+    val watchSync = PhoneWatchSync(app, trainTracker, settingsStore)
 }

@@ -7,6 +7,7 @@ import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import com.takaotech.departureboard.cache.StationSource
 import com.takaotech.departureboard.debuglog.DebugLog
+import com.takaotech.departureboard.live.SettingsStore
 import com.takaotech.departureboard.rfi.Station
 import com.takaotech.departureboard.watch.TrainTracker
 import com.takaotech.departureboard.watch.WatchPaths
@@ -35,7 +36,11 @@ import kotlin.time.TimeSource
  * Senza Google Play Services o senza app Wear OS le chiamate falliscono: il watch risulta
  * semplicemente non collegato.
  */
-class PhoneWatchSync(context: Context, private val tracker: TrainTracker) : WatchSync {
+class PhoneWatchSync(
+    context: Context,
+    private val tracker: TrainTracker,
+    private val settingsStore: SettingsStore,
+) : WatchSync {
 
     private val dataClient = Wearable.getDataClient(context)
     private val capabilityClient = Wearable.getCapabilityClient(context)
@@ -43,6 +48,9 @@ class PhoneWatchSync(context: Context, private val tracker: TrainTracker) : Watc
 
     private val connectedState = MutableStateFlow(false)
     override val connected = connectedState.asStateFlow()
+
+    private val completedState = MutableStateFlow<WatchSelection?>(null)
+    override val completed = completedState.asStateFlow()
 
     /** Ultima selezione da mandare; null finché non ce n'è una (anche "nessun treno"). */
     private val pending = MutableStateFlow<Pending?>(null)
@@ -87,20 +95,36 @@ class PhoneWatchSync(context: Context, private val tracker: TrainTracker) : Watc
         tracker.candidates(source, station)
 
     /**
-     * Controlla [selection] e manda l'esito al watch. App, tile e complication del watch possono
-     * chiederlo quasi insieme: entro [REUSE] si rimanda il controllo appena fatto. [request] è il
-     * numero di richiesta del watch, che torna nel DataItem.
+     * Controlla il treno salvato nelle impostazioni e manda l'esito al watch. App, tile e
+     * complication del watch possono chiederlo quasi insieme: entro [REUSE] si rimanda il
+     * controllo appena fatto. [request] è il numero di richiesta del watch, che torna nel DataItem.
      */
-    suspend fun trackAndPublish(selection: WatchSelection?, request: String) {
+    suspend fun trackAndPublish(request: String) {
+        val selection = settingsStore.load().watch
         val snapshot = if (selection == null) {
             WatchSnapshot()
         } else {
             tracking.withLock {
-                lastTracked?.takeIf { (at, last) -> last.selection == selection && at.elapsedNow() < REUSE }?.second
+                lastTracked?.takeIf { (at, last) -> selection.sameTrain(last.selection) && at.elapsedNow() < REUSE }?.second
                     ?: tracker.track(selection).also { lastTracked = TimeSource.Monotonic.markNow() to it }
             }
         }
         put(WatchPaths.TRAIN, snapshot.encode(), request)
+        val seen = snapshot.selection
+        if (selection != null && seen != null && selection.orDetailsOf(seen) != selection) {
+            trainSeen(selection, seen)
+        }
+    }
+
+    /**
+     * Il treno [chosen], scelto solo per numero, è comparso in tabellone: etichetta e orario di
+     * [seen] vanno nelle impostazioni, al tabellone se è aperto ([completed]) e al watch.
+     */
+    private suspend fun trainSeen(chosen: WatchSelection, seen: WatchSelection) {
+        DebugLog.d(TAG) { "${chosen.label} trovato in tabellone: ${seen.label}" }
+        completedState.value = seen
+        selectionChanged(seen)
+        settingsStore.update { if (it.watch == chosen) it.copy(watch = seen) else it }
     }
 
     /** Pubblica [json] come DataItem urgente su [path]: il watch lo riceve subito, non a lotti. */

@@ -113,6 +113,19 @@ class SettingsStore(path: String) : AutoCloseable {
     }
 
     /**
+     * Cambia le impostazioni salvate in modo atomico, per chi non ha un [LiveBoardState] (il
+     * servizio che risponde allo smartwatch). Un [save] ancora in sospeso le può riscrivere: chi
+     * lo usa deve poter ripetere il cambio.
+     */
+    suspend fun update(transform: (BoardSettings) -> BoardSettings) {
+        try {
+            store.updateData(transform)
+        } catch (e: IOException) {
+            DebugLog.d(TAG) { "Salvataggio delle impostazioni fallito (${e.message})" }
+        }
+    }
+
+    /**
      * Scrive le eventuali impostazioni in sospeso e libera il file: al ritorno se ne può aprire
      * subito un altro [SettingsStore] (es. un ViewModel ricreato).
      */

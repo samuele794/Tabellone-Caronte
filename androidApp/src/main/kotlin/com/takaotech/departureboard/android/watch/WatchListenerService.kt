@@ -24,10 +24,7 @@ class WatchListenerService : WearableListenerService() {
         val services = services
         runBlocking {
             val done = withTimeoutOrNull(TIMEOUT) {
-                services.watchSync.trackAndPublish(
-                    services.settingsStore.load().watch,
-                    request = event.data.decodeToString(),
-                )
+                services.watchSync.trackAndPublish(request = event.data.decodeToString())
             }
             if (done == null) DebugLog.d(PhoneWatchSync.TAG) { "Controllo per il watch scaduto" }
         }

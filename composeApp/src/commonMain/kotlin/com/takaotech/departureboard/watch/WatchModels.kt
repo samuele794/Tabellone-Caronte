@@ -21,10 +21,29 @@ data class WatchSelection(
     val label: String,
     /**
      * Orario programmato quando è stato scelto, "HH:MM": il watch sa quando controllarlo anche
-     * prima di averlo visto in tabellone. null nelle selezioni salvate prima che ci fosse.
+     * prima di averlo visto in tabellone. null se il treno è stato scelto solo per numero e non è
+     * ancora comparso, e nelle selezioni salvate prima che ci fosse.
      */
     val time: String? = null,
 ) {
+    /** Etichetta e orario sono ancora da prendere dal tabellone, la prima volta che il treno c'è. */
+    val awaitingDetails: Boolean get() = time == null
+
+    /** Stesso treno da seguire (fornitore, stazione e numero), anche se etichetta e orario no. */
+    fun sameTrain(other: WatchSelection?): Boolean =
+        other != null && source == other.source && station == other.station && trainNumber == other.trainNumber
+
+    /** Con etichetta e orario di [train], visto in tabellone, se ancora mancavano. */
+    fun completedWith(train: WatchedTrain): WatchSelection =
+        if (awaitingDetails) of(source, station, train) else this
+
+    /**
+     * Questa selezione, oppure [known] se è lo stesso treno già trovato in tabellone mentre questa
+     * aspetta ancora: etichetta e orario veri non tornano indietro.
+     */
+    fun orDetailsOf(known: WatchSelection?): WatchSelection =
+        if (awaitingDetails && known != null && !known.awaitingDetails && sameTrain(known)) known else this
+
     companion object {
         fun of(source: StationSource, station: Station, train: WatchedTrain) = WatchSelection(
             source = source,
@@ -32,6 +51,17 @@ data class WatchSelection(
             trainNumber = train.number,
             label = "${train.category} ${train.number} → ${train.destination}",
             time = train.time,
+        )
+
+        /**
+         * Il treno [number] da [station], scelto senza vederlo in tabellone: etichetta e orario
+         * arrivano con [completedWith] la prima volta che compare.
+         */
+        fun byNumber(source: StationSource, station: Station, number: String) = WatchSelection(
+            source = source,
+            station = station,
+            trainNumber = number,
+            label = "Treno $number",
         )
     }
 }
@@ -125,19 +155,29 @@ data class WatchSnapshot(
     val lastAttemptAt: Long get() = maxOf(updatedAt, attemptedAt)
 
     /**
-     * Questo controllo, tenendo da [previous] il treno visto l'ultima volta se ora non c'è e la
-     * selezione è la stessa.
+     * Questo controllo, tenendo da [previous] dello stesso treno quello visto l'ultima volta se
+     * ora non c'è, ed etichetta e orario se questo controllo non li ha.
      */
-    fun after(previous: WatchSnapshot?): WatchSnapshot =
-        if (train == null && previous?.selection == selection && previous?.train != null) {
-            copy(train = previous.train)
-        } else {
-            this
-        }
+    fun after(previous: WatchSnapshot?): WatchSnapshot {
+        val selection = selection ?: return this
+        val known = previous?.selection?.takeIf(selection::sameTrain) ?: return this
+        return copy(selection = selection.orDetailsOf(known), train = train ?: previous.train)
+    }
 
-    /** Un'altra selezione: i dati del treno precedente non valgono più. */
-    fun withSelection(selection: WatchSelection?): WatchSnapshot =
-        if (selection == this.selection) this else WatchSnapshot(selection)
+    /**
+     * La selezione arrivata dal telefono. Un altro treno: i dati del precedente non valgono più.
+     * Lo stesso treno: si tiene tutto, compresi etichetta e orario già trovati in tabellone.
+     */
+    fun withSelection(selection: WatchSelection?): WatchSnapshot = when {
+        selection == this.selection -> this
+        selection != null && selection.sameTrain(this.selection) -> copy(
+            selection = selection.orDetailsOf(
+                this.selection
+            )
+        )
+
+        else -> WatchSnapshot(selection)
+    }
 
     fun encode(): String = WatchJson.encodeToString(serializer(), this)
 

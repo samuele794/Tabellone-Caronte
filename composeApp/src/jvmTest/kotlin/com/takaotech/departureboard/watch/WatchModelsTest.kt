@@ -8,7 +8,9 @@ import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class WatchModelsTest {
 
@@ -90,6 +92,45 @@ class WatchModelsTest {
     fun `cambiando selezione si riparte da zero`() {
         assertEquals(onBoard, onBoard.withSelection(selection))
         assertEquals(WatchSnapshot(), onBoard.withSelection(null))
+    }
+
+    @Test
+    fun `il treno scelto per numero si completa una volta sola, e i dati non tornano indietro`() {
+        val chosen = WatchSelection.byNumber(StationSource.Rfi, selection.station, "91831")
+        assertTrue(chosen.awaitingDetails)
+        assertEquals("Treno 91831", chosen.label)
+
+        val completed = chosen.completedWith(train)
+        assertEquals(selection.copy(time = "19:18"), completed)
+        assertFalse(completed.awaitingDetails)
+        assertEquals(
+            completed,
+            completed.completedWith(train.copy(destination = "MODENA", time = "20:00"))
+        )
+
+        assertTrue(chosen.sameTrain(completed))
+        assertFalse(chosen.sameTrain(completed.copy(trainNumber = "1")))
+        assertFalse(chosen.sameTrain(null))
+        assertEquals(completed, chosen.orDetailsOf(completed))
+        assertEquals(chosen, chosen.orDetailsOf(completed.copy(trainNumber = "1")))
+        assertEquals(completed, completed.orDetailsOf(chosen))
+    }
+
+    @Test
+    fun `lo stesso treno, anche con la selezione completata, tiene i dati`() {
+        val chosen = WatchSelection.byNumber(StationSource.Rfi, selection.station, "91831")
+        val completed = chosen.completedWith(train)
+        val seen = WatchSnapshot(completed, train, WatchStatus.OnBoard, updatedAt = 1_000)
+
+        // Il telefono rimanda ancora la scelta per numero: il watch non perde etichetta e orario.
+        assertEquals(seen, seen.withSelection(chosen))
+        // La selezione completata arriva su uno snapshot che ancora non l'aveva.
+        val waiting = WatchSnapshot(chosen, status = WatchStatus.NotOnBoard, updatedAt = 500)
+        assertEquals(waiting.copy(selection = completed), waiting.withSelection(completed))
+        // Un controllo che non l'ha trovato tiene i dati del controllo precedente.
+        val gone = WatchSnapshot(chosen, null, WatchStatus.NotOnBoard, updatedAt = 2_000)
+        assertEquals(gone.copy(selection = completed, train = train), gone.after(seen))
+        assertEquals(seen, seen.after(waiting))
     }
 
     @Test
