@@ -54,17 +54,18 @@ l'utente segue, con la grafica dei monitor di binario RFI
 Disposizione del monitor di Bologna, adattata al quadrante rotondo. Le etichette sono solo in
 italiano, per lasciare spazio ai LED.
 
-| Zona             | Contenuto                                                                                              |
-|------------------|--------------------------------------------------------------------------------------------------------|
-| In alto          | stato dell'aggiornamento: "aggiornato 3 min fa", "12 min fa · senza rete", "aggiornamento…"            |
-| Colonna sinistra | binario in grande, bianco e corsivo (il resto, es. "ovest", più piccolo); sotto, l'orologio analogico  |
-| Centro, riga 1   | **destinazione** (LED ambra, scorre se non entra), con la spia "in partenza" lampeggiante              |
-| Centro, riga 2   | **partenza**: orario, con il ritardo in fondo al modulo (`5'`, `220'`, `CANC`) e l'etichetta "ritardo" |
-| Colonna destra   | **treno**: logo o nome dell'impresa in alto, categoria e numero attaccati in basso (`R91831`)          |
-| In basso         | **informazioni** (fermate e note), larghe quanto centro e destra; scorrono se non entrano              |
-| Fondo            | nome della stazione                                                                                    |
+| Zona             | Contenuto                                                                                                                  |
+|------------------|----------------------------------------------------------------------------------------------------------------------------|
+| In alto          | stato dell'aggiornamento: "aggiornato 3 min fa", "12 min fa · senza rete", "aggiornamento…"                                |
+| Colonna sinistra | binario in grande, bianco e corsivo (il resto, es. "ovest", più piccolo); sotto, l'orologio analogico                      |
+| Centro, riga 1   | **destinazione** (LED ambra, scorre se non entra), con la spia "in partenza" lampeggiante                                  |
+| Centro, riga 2   | **partenza**: orario, con il ritardo in fondo al modulo (`5'`, `220'`, `CANC`) e l'etichetta "ritardo"                     |
+| Colonna destra   | **treno**: logo o nome dell'impresa in alto, categoria e numero in basso (`R 91831`); se non entrano scorre solo il numero |
+| In basso         | **informazioni** (fermate e note), larghe quanto centro e destra; scorrono se non entrano                                  |
+| Fondo            | nome della stazione                                                                                                        |
 
-- Il pannello è **nero**; i moduli LED sono antracite, come sui monitor veri.
+- Il pannello è **nero**; i moduli LED sono antracite, come sui monitor veri. Le etichette sono solo
+  testo, senza riquadro.
 - **Aggiornamento manuale**: il monitor riempie lo schermo e un tocco sopra non fa nulla, così non
   si aggiorna per sbaglio. Scorrendo verso il basso, con il dito o con la corona/ghiera, compare il
   pulsante **Aggiorna**.
@@ -89,10 +90,28 @@ italiano, per lasciare spazio ai LED.
 - **Lunga**: `R 91831 VIGNOLA 19:18 +5' BIN 7`.
 - Un tocco apre l'app.
 
+### Attività in corso (icona sul quadrante)
+
+- Solo nella **fascia attiva** del treno mostrato (§4): da 90 minuti prima a 20 minuti dopo la
+  partenza, ritardo compreso, e finché resta in tabellone. Fuori si toglie da sola; quando il treno
+  parte passa al successivo, se anche lui è nella sua fascia.
+- Mostra l'icona del treno sul quadrante e tra le app recenti; un tocco riapre l'app. Così l'app si
+  ritrova anche quando, dopo un po' a schermo spento, il watch torna al quadrante.
+- L'icona è il muso stilizzato di un treno, secondo la categoria: **ETR 1000** per Frecciarossa e
+  alta velocità (`FR`, `AV`), **ETR 460** per Frecciabianca e Frecciargento (`FB`, `FA`, `ES*`),
+  **E.464** per tutti gli altri. Finché il treno non si è visto in tabellone, la categoria è quella
+  dell'etichetta scelta; per un treno scelto solo per numero, E.464.
+- Testo: etichetta del treno e `19:18 · +5' · BIN 7`, oppure `19:18 · in attesa` se il treno non è
+  in tabellone. Non suona e non vibra.
+- Non chiede dati da sé: si aggiorna quando arriva un dato nuovo, e si accende e si spegne
+  all'inizio e alla fine della fascia (WorkManager).
+- Serve il permesso delle notifiche (Wear OS 4 e successivi): l'app lo chiede una volta sola, la
+  prima volta che si apre con un treno da seguire. Senza permesso non compare.
+
 ### Ambient (always-on)
 
 - Pannello e moduli neri, senza LED spenti; LED accesi attenuati e senza alone.
-- Etichette senza riquadro, orologio a solo contorno.
+- Orologio a solo contorno.
 - Nulla scorre o lampeggia; l'orologio avanza una volta al minuto.
 
 ## 3. Da dove arrivano i dati

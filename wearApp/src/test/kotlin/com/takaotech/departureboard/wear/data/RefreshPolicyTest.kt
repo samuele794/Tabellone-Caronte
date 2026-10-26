@@ -10,7 +10,9 @@ import com.takaotech.departureboard.watch.WatchedTrain
 import java.time.LocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
@@ -197,5 +199,25 @@ class RefreshPolicyTest {
             at("19:20"),
             RefreshPolicy.nextRefreshAt(error, at("19:11"), foreground = true)
         )
+    }
+
+    @Test
+    fun `fascia del treno mostrato, per l'attività in corso`() {
+        assertNull(RefreshPolicy.window(WatchSnapshot(), at("18:00")))
+        assertNull(RefreshPolicy.window(WatchSnapshot(selection.copy(time = null)), at("18:00")))
+        val waiting = snapshot(at("17:00"))
+        val before = checkNotNull(RefreshPolicy.window(waiting, at("17:00")))
+        assertFalse(at("17:00") in before)
+        assertEquals(at("17:48"), before.start)
+        val inside = checkNotNull(RefreshPolicy.window(waiting, at("17:48")))
+        assertTrue(at("17:48") in inside)
+        assertEquals(at("19:38"), inside.end)
+        // Con il ritardo la fascia finisce dopo; partito il treno, è quella di domani.
+        val late = snapshot(at("19:40"), WatchStatus.OnBoard, train.copy(delayMinutes = 30))
+        assertEquals(at("20:08"), RefreshPolicy.window(late, at("19:41"))?.end)
+        val gone = snapshot(at("19:20"), WatchStatus.NotOnBoard, train)
+        val tomorrow = checkNotNull(RefreshPolicy.window(gone, at("19:21")))
+        assertFalse(at("19:21") in tomorrow)
+        assertEquals(at("17:48", day = 27), tomorrow.start)
     }
 }

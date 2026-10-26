@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+    android_wear_capabilities la legge Google Play Services, non il codice: senza questo file lo
+    shrinker della release la toglie e il Data Layer non vede la capability dell'app.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@array/android_wear_capabilities" />

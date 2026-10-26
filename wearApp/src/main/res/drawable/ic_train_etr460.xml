@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?><!-- Muso stilizzato dell'ETR 460 (Frecciabianca), visto di fronte: muso a tronco di piramide, grande parabrezza, fari alle estremità della fascia rossa, gonna. Monocromatico, per l'attività in corso. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M17.2,5 Q24,3.8 30.8,5 C32.7,5.2 34,7.6 34.4,9.4 L38.4,25 C39.7,27.2 40.6,30 40.6,33.4 L40.6,38 L7.4,38 L7.4,33.4 C7.4,30 8.3,27.2 9.6,25 L13.6,9.4 C14,7.6 15.3,5.2 17.2,5 Z M16,10 L32,10 L35.6,23.6 Q24,25.4 12.4,23.6 Z M10.6,27.6 L18.4,28.2 L18,31.6 L10,31.2 Z M37.4,27.6 L29.6,28.2 L30,31.6 L38,31.2 Z M19.8,28.6 Q24,29 28.2,28.6 L28,30.4 Q24,30.8 20,30.4 Z M7.4,40 L40.6,40 L38.4,45 L9.6,45 Z" />
+</vector>

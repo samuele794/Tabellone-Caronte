@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- requestNetwork(): accende Wi-Fi/LTE del watch quando il telefono non è raggiungibile. -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <!-- Attività in corso (icona sul quadrante) vicino alla partenza del treno. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".WearApp"

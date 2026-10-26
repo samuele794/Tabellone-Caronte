@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?><!-- Muso stilizzato dell'E.464, visto di fronte: cassa squadrata con il pantografo, maschera nera a V con due vetri, due coppie di fari tondi, spazzaneve. Monocromatico, per l'attività in corso. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M13,7 L35,7 C38.6,7 40.6,9.6 40.6,13.2 L41,37 L7,37 L7.4,13.2 C7.4,9.6 9.4,7 13,7 Z M15,2 L33,2 L33,3.6 L28.4,3.6 L26.6,5.6 L21.4,5.6 L19.6,3.6 L15,3.6 Z M10.8,10.6 L23,10.6 L23,23 L10.8,17.4 Z M25,10.6 L37.2,10.6 L37.2,17.4 L25,23 Z M10.2,30 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 Z M15.4,30 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 Z M28.6,30 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 Z M33.8,30 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 Z M5.5,39.2 L42.5,39.2 L40.6,45 L7.4,45 Z" />
+</vector>

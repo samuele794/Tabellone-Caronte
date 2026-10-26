@@ -26,6 +26,7 @@ import com.takaotech.departureboard.watch.WatchStore
 import com.takaotech.departureboard.watch.decodeWatchTrains
 import com.takaotech.departureboard.wear.complication.TrainComplicationService
 import com.takaotech.departureboard.wear.net.WatchNetwork
+import com.takaotech.departureboard.wear.ongoing.OngoingTrain
 import com.takaotech.departureboard.wear.tile.TrainTileService
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.CancellationException
@@ -250,6 +251,8 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
         store.update { latest -> transform(latest).also { before = latest; after = it } }
         val old = before ?: return
         val new = after ?: return
+        // Treno, stato e orari decidono se e con che testo c'è l'attività in corso.
+        if (old != new) OngoingTrain.update(context)
         // Il tile mostra anche l'ora dell'aggiornamento; la complication solo il treno.
         if (old.copy(attemptedAt = 0) != new.copy(attemptedAt = 0)) {
             TileService.getUpdater(context).requestUpdate(TrainTileService::class.java)

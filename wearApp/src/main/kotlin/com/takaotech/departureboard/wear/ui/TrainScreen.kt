@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -32,7 +31,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,6 +85,12 @@ private const val MODULE_CHARS = 10
 /** Caratteri del ritardo, in fondo al modulo della partenza ("220'", "CANC"). */
 private const val DELAY_CHARS = 4
 
+/**
+ * Caratteri massimi di categoria e numero nella colonna "treno": oltre, i LED diventano troppo
+ * piccoli e il numero scorre.
+ */
+private const val TRAIN_CHARS = 8
+
 /** Colonne di punti di un modulo largo [chars] caratteri 5×7 (l'ultimo senza spazio). */
 private fun dots(chars: Int) = chars * 6 - 1
 
@@ -123,7 +127,6 @@ fun TrainScreen(
     CompositionLocalProvider(
         LocalBoardColors provides colors,
         LocalLedTicker provides rememberLedTicker(running = !ambient),
-        LocalAmbient provides ambient,
     ) {
         BoxWithConstraints(
             Modifier
@@ -220,14 +223,8 @@ private val AmbientColors = BoardColors.Oled.copy(
     lampOff = Color.Transparent,
 )
 
-/** In ambient: meno pixel accesi (niente alone, etichette senza riquadro). */
-private val LocalAmbient = staticCompositionLocalOf { false }
-
 /** Righe sottili tra le righe del monitor. */
 private val RuleColor = Color(0xFF3C3E45)
-
-/** Fondo delle etichette, il riquadro scuro attorno a "destinazione". */
-private val LabelPill = Color(0xFF30323A)
 
 /**
  * Misure del monitor, in frazioni del diametro [d] dello schermo.
@@ -380,16 +377,41 @@ private fun TrainColumn(train: WatchedTrain?, number: String, ambient: Boolean, 
                     glow = !ambient,
                 )
             }
-            // Come sul monitor, categoria e numero attaccati: "R91831".
-            val text = listOfNotNull(train?.category, train?.number ?: number).joinToString("")
-            val chars = text.length.coerceAtLeast(1)
-            DotMatrixText(
-                text,
-                chars = chars,
-                pitch = minOf(g.pitch * 1.2f, inner / dots(chars)),
-                marquee = Marquee.Off,
-                glow = !ambient,
-            )
+            // Categoria e numero separati da uno spazio: "R 91831". Se non entrano la categoria resta
+            // ferma e scorre solo il numero.
+            val head = train?.category?.let { "$it " }.orEmpty()
+            val tail = train?.number ?: number
+            val text = head + tail
+            val chars = text.length.coerceIn(1, TRAIN_CHARS)
+            val pitch = minOf(g.pitch * 1.2f, inner / dots(chars))
+            if (text.length <= TRAIN_CHARS || head.isEmpty()) {
+                DotMatrixText(
+                    text,
+                    chars = chars,
+                    pitch = pitch,
+                    marquee = if (ambient) Marquee.Off else Marquee.Auto,
+                    glow = !ambient,
+                )
+            } else {
+                // Una colonna di punti tra i due moduli, così il passo resta quello di un testo solo.
+                Row {
+                    DotMatrixText(
+                        head,
+                        chars = head.length,
+                        pitch = pitch,
+                        marquee = Marquee.Off,
+                        glow = !ambient,
+                    )
+                    Spacer(Modifier.width(pitch))
+                    DotMatrixText(
+                        tail,
+                        chars = (TRAIN_CHARS - head.length).coerceAtLeast(1),
+                        pitch = pitch,
+                        marquee = if (ambient) Marquee.Off else Marquee.Auto,
+                        glow = !ambient,
+                    )
+                }
+            }
         }
     }
 }
@@ -462,16 +484,11 @@ private fun AnalogClock(nowMillis: Long, ambient: Boolean, modifier: Modifier = 
 /** Punto a distanza [radius] dal centro, con l'angolo [angle] contato dalle 12 in senso orario. */
 private fun polar(angle: Float, radius: Float) = Offset(sin(angle) * radius, -cos(angle) * radius)
 
-/** Etichetta come sul monitor: parola in grassetto bianco su un riquadro scuro (in ambient senza). */
+/** Etichetta: parola in grassetto bianco, senza riquadro, direttamente sul pannello nero. */
 @Composable
 private fun Label(text: String, g: Geometry) {
-    val pill = if (LocalAmbient.current) Color.Transparent else LabelPill
     BasicText(
         text,
-        Modifier
-            .clip(RoundedCornerShape(g.unit * 2))
-            .background(pill)
-            .padding(horizontal = g.unit * 3),
         style = TextStyle(
             color = LocalBoardColors.current.label,
             fontSize = g.sp(10f),

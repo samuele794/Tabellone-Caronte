@@ -15,4 +15,8 @@
     <!-- Pulsante sotto il monitor, che si raggiunge scorrendo. -->
     <string name="refresh">Aggiorna</string>
     <string name="refreshing">Aggiornamento…</string>
+
+    <!-- Attività in corso: l'icona sul quadrante vicino alla partenza. -->
+    <string name="ongoing_channel">Treno in partenza</string>
+    <string name="ongoing_channel_description">Icona sul quadrante per tornare al treno, vicino alla partenza</string>
 </resources>

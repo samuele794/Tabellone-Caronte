@@ -93,8 +93,21 @@ object RefreshPolicy {
         return wait
     }
 
+    /**
+     * La fascia del treno da mostrare adesso ([WatchSnapshot.planned]): quella in corso, se [now] è
+     * tra [Departure.start] e [Departure.end], altrimenti la prossima. null se non c'è nessun treno
+     * o l'orario non si conosce.
+     */
+    fun window(saved: WatchSnapshot, now: Long): Departure? {
+        val snapshot = saved.planned(saved.followed, Instant.ofEpochMilli(now).toKotlinInstant())
+        if (snapshot.selection == null) return null
+        return departure(snapshot, now)
+    }
+
     /** Partenza [at] (con il ritardo noto) e fascia da [start] a [end], in millisecondi. */
-    private class Departure(val at: Long, val start: Long, val end: Long)
+    class Departure(val at: Long, val start: Long, val end: Long) {
+        operator fun contains(now: Long) = now in start until end
+    }
 
     /**
      * La partenza da seguire adesso: quella più vicina a [now] (ieri, oggi o domani, per i treni

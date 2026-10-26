@@ -62,6 +62,7 @@ android {
 dependencies {
     implementation(project(":composeApp"))
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.fragment)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.play.services.wearable)
     implementation(libs.kotlinx.coroutines.play.services)
@@ -72,6 +73,7 @@ dependencies {
     implementation(libs.wear.complications.data.source)
     implementation(libs.wear.remote.interactions)
     implementation(libs.wear)
+    implementation(libs.wear.ongoing)
     implementation(libs.work.runtime)
     implementation(libs.concurrent.futures.ktx)
     testImplementation(libs.kotlin.test.junit)
