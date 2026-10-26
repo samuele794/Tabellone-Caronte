@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tile_label">Il mio treno</string>
+    <string name="tile_description">Destinazione, partenza, ritardo e binario del treno seguito</string>
+    <string name="complication_label">Il mio treno</string>
+
+    <!-- Etichette del monitor: solo italiano, per lasciare spazio ai LED. -->
+    <string name="label_train">treno</string>
+    <string name="label_destination">destinazione</string>
+    <string name="label_departure">partenza</string>
+    <string name="label_delay">ritardo</string>
+    <string name="label_platform">binario</string>
+    <string name="label_info">informazioni</string>
+</resources>

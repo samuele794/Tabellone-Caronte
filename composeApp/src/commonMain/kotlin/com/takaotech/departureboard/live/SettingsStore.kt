@@ -9,6 +9,7 @@ import com.takaotech.departureboard.cache.ioDispatcher
 import com.takaotech.departureboard.cache.jsonDataStore
 import com.takaotech.departureboard.debuglog.DebugLog
 import com.takaotech.departureboard.rfi.Station
+import com.takaotech.departureboard.watch.WatchSelection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
@@ -68,6 +69,8 @@ data class BoardSettings(
     val intro: Boolean = true,
     /** Tabellone dentro il cruscotto dell'intro anche dopo, invece che a tutto schermo. */
     val dashboard: Boolean = false,
+    /** Treno seguito sullo smartwatch; null se nessuno. */
+    val watch: WatchSelection? = null,
 )
 
 /**

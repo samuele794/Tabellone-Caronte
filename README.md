@@ -43,6 +43,7 @@ visto che un certo Ministro dei Trasporti non è in grado di prendersi [le sue r
 |---------|---------------------------------------------------|-----------------------------------------------------------------------------|
 | Android | `./gradlew :androidApp:assembleRelease`           | APK in `androidApp/build/outputs/apk/release/`                              |
 | Android | `./gradlew :androidApp:bundleRelease`             | AAB per il Play Store in `androidApp/build/outputs/bundle/release/`         |
+| Wear OS | `./gradlew :wearApp:assembleRelease`              | APK smartwatch in `wearApp/build/outputs/apk/release/`                      |
 | Web     | `./gradlew :composeApp:wasmJsBrowserDistribution` | pagina statica in `composeApp/build/dist/wasmJs/productionExecutable/`      |
 | Desktop | `./gradlew :composeApp:packageUniversalJar`       | `composeApp/build/dist/DepartureBoard-<versione>.jar` (Windows/macOS/Linux) |
 
@@ -86,7 +87,7 @@ senza `.github/workflows/`, rigenerare con `KOTLIN_MAIN_KTS_COMPILED_SCRIPTS_CAC
 
 | Workflow  | Quando              | Cosa fa                                                                                                      |
 |-----------|---------------------|--------------------------------------------------------------------------------------------------------------|
-| `CI`      | push su `main` e PR | `jvmTest`, APK release (non firmato), jar universale, distribuzione wasmJs, build dell'immagine senza push |
+| `CI`      | push su `main` e PR | `jvmTest` e test del watch, APK release telefono e watch (non firmati), jar universale, distribuzione wasmJs, build dell'immagine senza push |
 | `Release` | push di un tag `v*` | GitHub Release con APK firmato e jar, immagine su ghcr.io                                                  |
 
 Per pubblicare una versione si aggiorna `app-version` e si incrementa `app-versionCode` in
@@ -100,8 +101,8 @@ Il tag deve corrispondere ad `app-version`, altrimenti la release si ferma. Con 
 (`v1.2.0-rc.1`) esce una prerelease: Release marcata come tale e immagine col solo tag
 `1.2.0-rc.1`.
 
-- **GitHub Release**: `Tabellone-<versione>.apk` e `DepartureBoard-<versione>.jar`, note generate
-  dai commit.
+- **GitHub Release**: `Tabellone-<versione>.apk`, `Tabellone-Wear-<versione>.apk` (smartwatch) e
+  `DepartureBoard-<versione>.jar`, note generate dai commit.
 - **Docker**: `ghcr.io/samuele794/tabellone-caronte` per `linux/amd64` e `linux/arm64`, con i tag
   `<versione>`, `<major>.<minor>` e `latest` e l'attestazione di provenienza della build.
   `docker run --rm -p 8080:8080 ghcr.io/samuele794/tabellone-caronte`.
@@ -121,7 +122,8 @@ Da configurare una volta sola nel repository GitHub (guida passo passo in
 | Modulo       | Contenuto                                                                                                                                                                   |
 |--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `composeApp` | Libreria KMP (`jvm()` + `android {}` + `wasmJs`): tutto il codice condiviso in `commonMain`, l'app desktop in `jvmMain`, la pagina web in `wasmJsMain`, i test in `jvmTest` |
-| `androidApp` | App Android (`com.android.application`): solo `MainActivity`, che mostra `LiveBoard`                                                                                        |
+| `androidApp` | App Android (`com.android.application`): `MainActivity`, che mostra `LiveBoard`, e il collegamento con lo smartwatch                                                        |
+| `wearApp`    | App Wear OS (`com.android.application`, stesso `applicationId` del telefono): il treno seguito, tile e complication; vedi [Smartwatch](#smartwatch-wear-os)                |
 
 Con AGP 9 il plugin `com.android.application` non si combina più con `kotlin.multiplatform`,
 per questo l'app Android è un modulo a parte che dipende da `composeApp`. Versioni in
@@ -409,6 +411,40 @@ Diagnosi: `adb logcat -s AndroidTts Annunci libc`.
 | `PlaceNames.kt`                  | Abbreviazioni delle località sciolte con l'elenco delle stazioni RFI               |
 | `Announcer.kt`                   | Coda: jingle e poi voce, un annuncio alla volta; `clear()` al cambio stazione      |
 
+## Smartwatch (Wear OS)
+
+Sul watch non c'è il tabellone intero ma **un solo treno**, con la grafica dei monitor di binario:
+etichette bianche (solo in italiano, per lasciare spazio ai LED), testo LED ambra, binario in un
+riquadro chiaro, informazioni che scorrono. Il treno si sceglie sul telefono, in Impostazioni →
+**Smartwatch**: prima la stazione (indipendente da quella del tabellone), poi uno dei treni in
+partenza. Si segue il **numero**, ogni giorno: quando il treno non è sul monitor il watch mostra
+"in attesa" con l'ultimo orario visto.
+
+| Sul watch     | Cosa mostra                                                                               |
+|---------------|-------------------------------------------------------------------------------------------|
+| App           | treno (logo, categoria, numero, spia "in partenza"), destinazione, partenza e ritardo, binario, informazioni, età del dato |
+| Tile          | destinazione, orario e ritardo, binario                                                   |
+| Complication  | breve: orario e `+5'` / `OK` / `CANC`; lunga: `R 91831 VIGNOLA 19:18 +5' BIN 7`           |
+
+I dati arrivano in modo **ibrido**, perché non tutti i watch hanno connettività propria:
+
+1. **Dal telefono** (Wearable Data Layer): il watch manda `/watch/refresh`, il telefono legge il
+   monitor e risponde con il DataItem `/watch/train`. Funziona anche ad app telefono chiusa
+   (`WatchListenerService`); il telefono non fa nulla se il watch non lo chiede.
+2. **Dal watch**, solo se il telefono non è raggiungibile e il watch ha **davvero** internet: chiede
+   una rete Wi-Fi/LTE, la vuole validata dal sistema e senza portale di accesso, e prima di scaricare
+   fa una richiesta di prova al fornitore (`WatchNetwork`). Il download usa la stessa rete.
+3. **Senza nessuna delle due** resta l'ultimo dato, con "ultimo aggiornamento N min fa · senza rete"
+   (o "senza internet").
+
+L'app aggiorna ogni 30 s mentre è aperta (non in ambient); tile e complication rispondono subito con
+l'ultimo dato e, se ha più di 4 minuti, ne chiedono uno nuovo.
+
+Telefono e watch devono avere lo stesso `applicationId` (`com.takaotech.departureboard`) e la stessa
+firma: `wearApp` legge le stesse credenziali di `signing/credential.properties`. Il `versionCode` del
+watch è quello del telefono più 10000. Per provarlo: un emulatore telefono e uno Wear OS abbinati
+(Device Manager → *Pair Wearable*), poi `./gradlew :androidApp:installDebug :wearApp:installDebug`.
+
 ## Desktop (Nucleus)
 
 L'app desktop usa [Nucleus](https://nucleusframework.dev) sopra Compose Desktop: il plugin
@@ -484,7 +520,7 @@ Gradle usa fino a 4 GB di heap (`gradle.properties`): a Docker deve restare memo
 ## File
 
 Tutto il codice sta nel package `com.takaotech.departureboard` e nei suoi sottopackage (`announce`,
-`cache`, `debuglog`, `fnm`, `live`, `rfi`, `tts`, `android`): i percorsi e i nomi di package di
+`cache`, `debuglog`, `fnm`, `live`, `rfi`, `tts`, `watch`, `android`, `wear`): i percorsi e i nomi di package di
 questo
 README sono relativi a `kotlin/com/takaotech/departureboard/` di ogni source set. Le risorse Compose
 generano `com.takaotech.departureboard.resources.Res`, la classe principale del desktop è
@@ -526,6 +562,14 @@ Applicazione:
 | `composeApp/src/jvmMain`    | `Main.kt`                 | Finestra desktop (Nucleus, Tao), `--snapshot`, `--intro-snapshot`, `--bench`, `--announce`, `--clatter`      |
 | `composeApp/src/wasmJsMain` | `Main.kt`                 | Pagina web: proxy, store su `localStorage`, sblocco audio al primo gesto                                     |
 | `androidApp/src/main`       | `android/MainActivity.kt` | Activity Android                                                                                             |
+| `androidApp/src/main`       | `android/DepartureBoardApp.kt` | Servizi del processo (cache, impostazioni, fornitori) condivisi da Activity e smartwatch                 |
+| `androidApp/src/main`       | `android/watch/`          | `PhoneWatchSync` (DataItem verso il watch), `WatchListenerService` (risponde a `/watch/refresh`)             |
+| `wearApp/src/main`          | `wear/`                   | App Wear OS: `data/WatchRefresher` (strategia ibrida), `net/WatchNetwork`, `ui/`, `tile/`, `complication/`   |
+
+Nel package `watch`, in `composeApp/src/commonMain`, il codice comune a telefono e watch:
+`WatchModels.kt` (selezione, treno, snapshot e percorsi del Data Layer), `TrainTracker.kt` (cerca il
+treno sul monitor partenze), `WatchStore.kt` (ultimo snapshot su DataStore), `WatchSync.kt`
+(interfaccia del collegamento, solo su Android).
 
 Il package radice, `rfi`, `live`, `announce` e `tts` (le interfacce) usano solo API
 comuni (Compose Multiplatform, Ktor,

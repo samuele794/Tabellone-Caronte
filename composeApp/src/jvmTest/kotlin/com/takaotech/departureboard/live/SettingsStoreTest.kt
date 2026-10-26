@@ -14,8 +14,12 @@ import com.takaotech.departureboard.tts.LoopPlayer
 import com.takaotech.departureboard.tts.PcmPlayer
 import com.takaotech.departureboard.tts.SoundPlayer
 import com.takaotech.departureboard.tts.SpeechEngine
+import com.takaotech.departureboard.watch.WatchSelection
+import com.takaotech.departureboard.watch.WatchSync
+import com.takaotech.departureboard.watch.WatchedTrain
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -693,6 +697,59 @@ class SettingsStoreTest {
                     listRefreshSeconds = mapOf(StationSource.Fnm to 60),
                 )
             )
+        }
+    }
+
+    /** Smartwatch finto: ricorda le selezioni ricevute. */
+    private class FakeWatchSync : WatchSync {
+        override val connected = MutableStateFlow(true)
+        val sent = mutableListOf<WatchSelection?>()
+
+        override fun selectionChanged(selection: WatchSelection?) {
+            sent += selection
+        }
+
+        override suspend fun candidates(source: StationSource, station: Station) = emptyList<WatchedTrain>()
+    }
+
+    private val vignola = WatchSelection(
+        StationSource.Rfi,
+        Station("837", "BOLOGNA CENTRALE"),
+        "91831",
+        "R 91831 → VIGNOLA",
+    )
+
+    @Test
+    fun `il treno dello smartwatch sopravvive alla riapertura e torna al watch`() = runBlocking {
+        SettingsStore(path).use { store ->
+            val watch = FakeWatchSync()
+            val state = LiveBoardState(sources, settingsStore = store, watchSync = watch)
+            state.restoreSettings()
+            state.watchSelection = vignola
+            assertEquals(listOf(null, vignola), watch.sent)
+            store.awaitSaved(BoardSettings(Selection(StationSource.Rfi, milano), watch = vignola))
+        }
+
+        SettingsStore(path).use { store ->
+            val watch = FakeWatchSync()
+            val state = LiveBoardState(sources, settingsStore = store, watchSync = watch)
+            assertNull(state.watchSelection)
+            state.restoreSettings()
+            assertEquals(vignola, state.watchSelection)
+            // Al ripristino la selezione si rimanda al watch, che potrebbe averla persa.
+            assertEquals(listOf<WatchSelection?>(vignola), watch.sent)
+        }
+    }
+
+    @Test
+    fun `senza treno salvato lo smartwatch non segue nulla`() = runBlocking {
+        File(path).apply { parentFile.mkdirs() }.writeText("""{"autoScroll":false}""")
+
+        SettingsStore(path).use { store ->
+            assertNull(store.load().watch)
+            val state = LiveBoardState(sources, settingsStore = store, watchSync = FakeWatchSync())
+            state.restoreSettings()
+            assertNull(state.watchSelection)
         }
     }
 

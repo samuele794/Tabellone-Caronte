@@ -109,17 +109,20 @@ workflow(
                 } > signing/credential.properties
             """.trimIndent(),
         )
-        run(name = "Build", command = "./gradlew :androidApp:assembleRelease")
+        // Telefono e smartwatch: stessa firma, che il Wearable Data Layer richiede.
+        run(name = "Build", command = "./gradlew :androidApp:assembleRelease :wearApp:assembleRelease")
         run(
             name = "APK",
             env = mapOf("VERSION" to expr(version.outputs.version)),
             command = """
                 APK=androidApp/build/outputs/apk/release/androidApp-release.apk
-                if [ ! -f "${'$'}APK" ]; then
+                WEAR=wearApp/build/outputs/apk/release/wearApp-release.apk
+                if [ ! -f "${'$'}APK" ] || [ ! -f "${'$'}WEAR" ]; then
                   echo "::error::Manca l'APK firmato: controlla i secret ANDROID_*"
                   exit 1
                 fi
                 mv "${'$'}APK" "Tabellone-${'$'}VERSION.apk"
+                mv "${'$'}WEAR" "Tabellone-Wear-${'$'}VERSION.apk"
             """.trimIndent(),
         )
         uses(name = "Upload", action = UploadArtifact(name = "android", path = listOf("Tabellone-*.apk")))

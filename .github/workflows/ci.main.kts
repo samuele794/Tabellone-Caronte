@@ -41,10 +41,10 @@ workflow(
         )
         uses(name = "Gradle", action = ActionsSetupGradle())
         // I test in uno step a sé: se si rompono lo si vede subito, senza cercarli tra R8 e ProGuard.
-        run(name = "Test", command = "./gradlew :composeApp:jvmTest")
+        run(name = "Test", command = "./gradlew :composeApp:jvmTest :wearApp:testDebugUnitTest")
         run(
             name = "Build",
-            command = "./gradlew :androidApp:assembleRelease " +
+            command = "./gradlew :androidApp:assembleRelease :wearApp:assembleRelease " +
                 ":composeApp:packageUniversalJar :composeApp:wasmJsBrowserDistribution",
         )
     }

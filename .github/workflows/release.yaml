@@ -84,18 +84,20 @@ jobs:
         } > signing/credential.properties
     - id: 'step-4'
       name: 'Build'
-      run: './gradlew :androidApp:assembleRelease'
+      run: './gradlew :androidApp:assembleRelease :wearApp:assembleRelease'
     - id: 'step-5'
       name: 'APK'
       env:
         VERSION: '${{ needs.version.outputs.version }}'
       run: |-
         APK=androidApp/build/outputs/apk/release/androidApp-release.apk
-        if [ ! -f "$APK" ]; then
+        WEAR=wearApp/build/outputs/apk/release/wearApp-release.apk
+        if [ ! -f "$APK" ] || [ ! -f "$WEAR" ]; then
           echo "::error::Manca l'APK firmato: controlla i secret ANDROID_*"
           exit 1
         fi
         mv "$APK" "Tabellone-$VERSION.apk"
+        mv "$WEAR" "Tabellone-Wear-$VERSION.apk"
     - id: 'step-6'
       name: 'Upload'
       uses: 'actions/upload-artifact@v7'

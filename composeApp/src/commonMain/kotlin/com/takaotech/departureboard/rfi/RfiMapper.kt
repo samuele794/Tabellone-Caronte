@@ -24,8 +24,7 @@ class RfiMapper {
         time = train.time,
         delayMinutes = train.delayMinutes,
         delayText = train.delayText,
-        // Le note seguono le fermate nella stessa colonna.
-        info = (listOf(train.info) + train.notes).filter { it.isNotBlank() }.joinToString(" - "),
+        info = info(train),
         platform = train.platform,
         // GIF su fondo trasparente (DotSampling.Alpha, il default) con scritte a tratto sottile.
         logo = train.carrierLogoBase64?.let(::logo),
@@ -38,6 +37,10 @@ class RfiMapper {
     }
 
     companion object {
+        /** Colonna "informazioni": le note seguono le fermate. */
+        fun info(train: RfiTrain): String =
+            (listOf(train.info) + train.notes).filter { it.isNotBlank() }.joinToString(" - ")
+
         /** Soglia per i marchi RFI: più bassa del default, altrimenti le lettere si spezzano. */
         const val LOGO_THRESHOLD = 0.35f
 

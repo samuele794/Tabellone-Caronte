@@ -60,4 +60,6 @@ android {
 dependencies {
     implementation(project(":composeApp"))
     implementation(libs.androidx.activity.compose)
+    implementation(libs.play.services.wearable)
+    implementation(libs.kotlinx.coroutines.play.services)
 }

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Il watch cerca il telefono con questa capability per chiedergli i dati del treno. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@array/android_wear_capabilities">
+    <string-array name="android_wear_capabilities" translatable="false">
+        <item>departureboard_phone</item>
+    </string-array>
+</resources>

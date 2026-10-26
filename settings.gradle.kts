@@ -17,3 +17,4 @@ rootProject.name = "departure-board"
 
 include(":composeApp")
 include(":androidApp")
+include(":wearApp")

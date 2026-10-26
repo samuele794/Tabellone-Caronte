@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -84,6 +85,9 @@ import com.takaotech.departureboard.live.LiveBoardState.Companion.STALE_PAUSE
 import com.takaotech.departureboard.rfi.BoardMode
 import com.takaotech.departureboard.rfi.RfiMapper
 import com.takaotech.departureboard.rfi.Station
+import com.takaotech.departureboard.watch.WatchSelection
+import com.takaotech.departureboard.watch.WatchSync
+import com.takaotech.departureboard.watch.WatchedTrain
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -115,7 +119,8 @@ import kotlin.time.TimeSource
  * con una [stationCache] gli elenchi stazioni si scaricano al più una volta al mese; con un
  * [settingsStore] stazione, scorrimento, annunci e intervalli di aggiornamento si ritrovano alla
  * riapertura dell'app. Con un [flapClatter] il tabellone a palette crepita quando gira; con un
- * [backgroundSound] suona in loop il sottofondo di stazione.
+ * [backgroundSound] suona in loop il sottofondo di stazione. Con un [watchSync] si sceglie anche il
+ * treno da seguire sullo smartwatch.
  */
 @Stable
 class LiveBoardState(
@@ -129,6 +134,8 @@ class LiveBoardState(
     val flapClatter: FlapClatter? = null,
     /** Sottofondo di stazione; null = la piattaforma non lo riproduce. */
     val backgroundSound: BackgroundSound? = null,
+    /** Collegamento con lo smartwatch; null = la piattaforma non ne ha. */
+    val watchSync: WatchSync? = null,
 ) {
     private val mapper = RfiMapper()
     private val announcements = BoardAnnouncements()
@@ -164,6 +171,7 @@ class LiveBoardState(
     private var backgroundVolumeState by mutableIntStateOf(DEFAULT_BACKGROUND_VOLUME)
     private var introState by mutableStateOf(true)
     private var dashboardState by mutableStateOf(false)
+    private var watchSelectionState by mutableStateOf<WatchSelection?>(null)
 
     init {
         backgroundSound?.volume = DEFAULT_BACKGROUND_VOLUME / 100f
@@ -182,7 +190,7 @@ class LiveBoardState(
     private enum class Setting {
         Selection, AutoScroll, Announce, Refresh, ListRefresh, EcoMode, ScreenOnOnlyWhenCharging, OledPalette,
         BoardStyle, FlapSound, FlapVolume, FlapPagePause, AnnounceBlink, AnnounceVolume,
-        Background, BackgroundVolume, Intro, Dashboard,
+        Background, BackgroundVolume, Intro, Dashboard, Watch,
     }
 
     /** Intervalli di aggiornamento scelti, per fornitore; chi manca usa [DEFAULT_REFRESH]. */
@@ -396,6 +404,19 @@ class LiveBoardState(
             changed(Setting.Dashboard)
         }
 
+    /** Treno seguito sullo smartwatch (null = nessuno); ogni cambio arriva subito al watch. */
+    var watchSelection: WatchSelection?
+        get() = watchSelectionState
+        set(value) {
+            watchSelectionState = value
+            watchSync?.selectionChanged(value)
+            changed(Setting.Watch)
+        }
+
+    /** Treni in partenza da [station] tra cui scegliere quello per lo smartwatch. */
+    suspend fun watchCandidates(source: StationSource, station: Station): List<WatchedTrain> =
+        checkNotNull(watchSync) { "Smartwatch non disponibile" }.candidates(source, station)
+
     private var introPlayingState by mutableStateOf(false)
 
     /**
@@ -557,6 +578,11 @@ class LiveBoardState(
         }
         if (Setting.Intro !in changedBeforeRestore) introState = saved.intro
         if (Setting.Dashboard !in changedBeforeRestore) dashboardState = saved.dashboard
+        if (Setting.Watch !in changedBeforeRestore) {
+            watchSelectionState = saved.watch?.takeIf { it.source in sources }
+        }
+        // Il watch può aver perso la selezione (app reinstallata): gliela si rimanda.
+        watchSync?.selectionChanged(watchSelectionState)
         if (Setting.AnnounceBlink !in changedBeforeRestore) {
             announceBlinkState =
                 saved.announceBlinkSeconds.seconds.nearestOf(ANNOUNCE_BLINK_OPTIONS)
@@ -601,6 +627,7 @@ class LiveBoardState(
                 backgroundVolume = backgroundVolume,
                 intro = intro,
                 dashboard = dashboard,
+                watch = watchSelection,
             )
         )
     }
@@ -987,6 +1014,13 @@ private fun secondsToRefresh(target: TimeSource.Monotonic.ValueTimeMark?): Long?
 @Composable
 private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDismiss: () -> Unit) {
     var pickStation by rememberSaveable { mutableStateOf(false) }
+    var pickWatchStation by rememberSaveable { mutableStateOf(false) }
+
+    /** Stazione di cui scegliere il treno per lo smartwatch; null a dialogo chiuso. */
+    var pickWatchTrain by remember { mutableStateOf<Pair<StationSource, Station>?>(null) }
+    val watchSelection = state.watchSelection
+    val watchSource = watchSelection?.source ?: state.source
+    val watchStation = watchSelection?.station ?: state.station
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1095,6 +1129,24 @@ private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDism
                         state.screenOnOnlyWhenCharging = it
                     }
                 }
+                state.watchSync?.let { sync ->
+                    val connected by sync.connected.collectAsState()
+                    Text("Smartwatch", style = MaterialTheme.typography.titleSmall)
+                    StationField(watchSource, watchStation, onClick = { pickWatchStation = true })
+                    ReadOnlyField(
+                        value = watchSelection?.label ?: "Nessuno",
+                        label = "Treno da seguire",
+                        onClick = { pickWatchTrain = watchSource to watchStation },
+                    )
+                    Text(
+                        if (connected) {
+                            "Lo stesso treno viene seguito ogni giorno"
+                        } else {
+                            "Nessuno smartwatch collegato: la scelta arriverà al prossimo collegamento"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 Text("Aggiornamento", style = MaterialTheme.typography.titleSmall)
                 state.availableSources.forEach { source ->
                     val listInterval = state.listRefreshInterval(source)
@@ -1132,11 +1184,41 @@ private fun SettingsDialog(state: LiveBoardState, knowsCharging: Boolean, onDism
     if (pickStation) {
         StationDialog(
             state,
+            currentSource = state.source,
+            currentStation = state.station,
             onSelect = { source, station ->
                 state.select(source, station)
                 pickStation = false
             },
             onDismiss = { pickStation = false },
+        )
+    }
+
+    if (pickWatchStation) {
+        StationDialog(
+            state,
+            currentSource = watchSource,
+            currentStation = watchStation,
+            // Senza treno la stazione non serve: si passa subito alla scelta del treno.
+            onSelect = { source, station ->
+                pickWatchStation = false
+                pickWatchTrain = source to station
+            },
+            onDismiss = { pickWatchStation = false },
+        )
+    }
+
+    pickWatchTrain?.let { (source, station) ->
+        TrainDialog(
+            state,
+            source,
+            station,
+            currentNumber = watchSelection?.takeIf { it.station == station }?.trainNumber,
+            onSelect = { train ->
+                state.watchSelection = train?.let { WatchSelection.of(source, station, it) }
+                pickWatchTrain = null
+            },
+            onDismiss = { pickWatchTrain = null },
         )
     }
 }
@@ -1249,13 +1331,18 @@ internal fun intervalLabel(interval: Duration): String {
 
 /** Campo di sola lettura: un clic apre la scelta della stazione. */
 @Composable
-private fun StationField(source: StationSource, station: Station, onClick: () -> Unit) {
+private fun StationField(source: StationSource, station: Station, onClick: () -> Unit) =
+    ReadOnlyField(station.name, "Stazione (${source.label})", onClick)
+
+/** Campo di sola lettura che a un clic apre una scelta. */
+@Composable
+private fun ReadOnlyField(value: String, label: String, onClick: () -> Unit) {
     Box {
         OutlinedTextField(
-            value = station.name,
+            value = value,
             onValueChange = {},
             readOnly = true,
-            label = { Text("Stazione (${source.label})") },
+            label = { Text(label) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -1266,20 +1353,23 @@ private fun StationField(source: StationSource, station: Station, onClick: () ->
 
 /**
  * Elenco delle stazioni, una scheda per fornitore (RFI ~2400 località, FNM ~560), filtrabile dalla
- * barra di ricerca. Scegliere una stazione di un'altra scheda cambia anche il fornitore.
+ * barra di ricerca, a partire da [currentStation] di [currentSource]. Scegliere una stazione di
+ * un'altra scheda cambia anche il fornitore.
  */
 @Composable
 private fun StationDialog(
     state: LiveBoardState,
+    currentSource: StationSource,
+    currentStation: Station,
     onSelect: (StationSource, Station) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var tab by rememberSaveable { mutableStateOf(state.source) }
+    var tab by rememberSaveable { mutableStateOf(currentSource) }
     LaunchedEffect(tab) { if (state.stations(tab).isEmpty()) state.loadStations(tab) }
     var query by rememberSaveable { mutableStateOf("") }
     val stations = state.stations(tab)
     val stationsError = state.stationsError(tab)
-    val current = state.station.takeIf { tab == state.source }
+    val current = currentStation.takeIf { tab == currentSource }
     val matches = remember(stations, query) {
         val q = query.trim()
         if (q.isEmpty()) stations else stations.filter { it.name.contains(q, ignoreCase = true) }
@@ -1370,6 +1460,115 @@ private fun StationDialog(
                 }
             }
         }
+    }
+}
+
+/**
+ * Treni in partenza da [station] tra cui scegliere quello da seguire sullo smartwatch, più
+ * "Nessuno"; [currentNumber] è quello seguito adesso, se è di questa stazione.
+ */
+@Composable
+private fun TrainDialog(
+    state: LiveBoardState,
+    source: StationSource,
+    station: Station,
+    currentNumber: String?,
+    onSelect: (WatchedTrain?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var attempt by remember { mutableIntStateOf(0) }
+    val trains by produceState<Result<List<WatchedTrain>>?>(null, source, station, attempt) {
+        value = null
+        value = try {
+            Result.success(state.watchCandidates(source, station))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            Modifier.padding(24.dp).widthIn(max = 520.dp).heightIn(max = 680.dp).fillMaxHeight(),
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = 6.dp,
+        ) {
+            Column(Modifier.padding(top = 24.dp, bottom = 8.dp)) {
+                Column(
+                    Modifier.padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("Treno da seguire", style = MaterialTheme.typography.headlineSmall)
+                    Text(station.name, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Treni in partenza nelle prossime ore; lo stesso numero viene seguito ogni giorno.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                HorizontalDivider()
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    val result = trains
+                    val list = result?.getOrNull()
+                    when {
+                        result == null -> CircularProgressIndicator(Modifier.size(32.dp))
+                        list == null -> Text(
+                            "Partenze non disponibili: ${result.exceptionOrNull()?.message ?: ""}",
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(24.dp),
+                        )
+
+                        else -> LazyColumn(Modifier.fillMaxSize()) {
+                            item {
+                                TrainItem("Nessuno", null, currentNumber == null) { onSelect(null) }
+                            }
+                            items(list) { train ->
+                                TrainItem(
+                                    title = "${train.category} ${train.number} · ${train.time}",
+                                    subtitle = train.destination,
+                                    selected = train.number == currentNumber,
+                                    onClick = { onSelect(train) },
+                                )
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider()
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    if (trains?.isFailure == true) {
+                        TextButton(onClick = { attempt++ }) { Text("Riprova") }
+                    }
+                    TextButton(onClick = onDismiss) { Text("Annulla") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrainItem(title: String, subtitle: String?, selected: Boolean, onClick: () -> Unit) {
+    val color =
+        if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 10.dp),
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else null,
+            color = color,
+        )
+        subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = color) }
     }
 }
 
