@@ -9,6 +9,7 @@ import com.takaotech.departureboard.cache.ioDispatcher
 import com.takaotech.departureboard.cache.jsonDataStore
 import com.takaotech.departureboard.debuglog.DebugLog
 import com.takaotech.departureboard.rfi.Station
+import com.takaotech.departureboard.watch.WatchPlan
 import com.takaotech.departureboard.watch.WatchSelection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -69,9 +70,14 @@ data class BoardSettings(
     val intro: Boolean = true,
     /** Tabellone dentro il cruscotto dell'intro anche dopo, invece che a tutto schermo. */
     val dashboard: Boolean = false,
-    /** Treno seguito sullo smartwatch; null se nessuno. */
+    /** Il solo treno seguito sullo smartwatch nei file di prima di [watchTrains]; non si scrive più. */
     val watch: WatchSelection? = null,
-)
+    /** Treni seguiti sullo smartwatch, in ordine di osservazione ([WatchPlan]). */
+    val watchTrains: List<WatchSelection> = emptyList(),
+) {
+    /** I treni seguiti, anche da un file di prima che ne aveva uno solo. */
+    val followedTrains: List<WatchSelection> get() = watchTrains.ifEmpty { listOfNotNull(watch) }
+}
 
 /**
  * Ultime [BoardSettings], salvate con DataStore in un file JSON su [path] (assoluto).

@@ -420,14 +420,17 @@ Diagnosi: `adb logcat -s AndroidTts Annunci libc`.
 
 ## Smartwatch (Wear OS)
 
-Sul watch non c'è il tabellone intero ma **un solo treno**, con la disposizione del monitor di
-binario di Bologna: binario e orologio a sinistra, destinazione e partenza al centro, impresa e
-numero a destra, informazioni che scorrono in basso; etichette solo in italiano, pannello nero. Il
-treno si sceglie sul telefono, in Impostazioni →
-**Smartwatch**: prima la stazione (indipendente da quella del tabellone), poi uno dei treni in
-partenza, oppure se ne scrive il numero (anche di un treno non ancora in tabellone: destinazione e
-orario si prendono dal monitor la prima volta che compare). Si segue il **numero**, ogni giorno:
-quando il treno non è sul monitor il watch mostra "in attesa" con l'ultimo orario visto.
+Sul watch non c'è il tabellone intero ma **un solo treno alla volta**, con la disposizione del
+monitor di binario di Bologna: binario e orologio a sinistra, destinazione e partenza al centro,
+impresa e numero a destra, informazioni che scorrono in basso; etichette solo in italiano, pannello
+nero. I treni si scelgono sul telefono, in Impostazioni → **Smartwatch**: se ne possono seguire più
+d'uno, anche da stazioni diverse (ognuno con la sua stazione, indipendente da quella del tabellone),
+scegliendoli tra le partenze o scrivendone il numero (anche di un treno non ancora in tabellone:
+destinazione e orario si prendono dal monitor la prima volta che compare). Si seguono gli stessi
+**numeri**, ogni giorno, in ordine di partenza: il watch mostra il primo non ancora partito e passa
+al successivo quando sparisce dal tabellone. Un treno scritto per numero prende il suo posto
+nell'ordine la prima volta che compare. Quando il treno mostrato non è sul monitor il watch dice "in
+attesa" con l'ultimo orario visto.
 
 | Sul watch     | Cosa mostra                                                                               |
 |---------------|-------------------------------------------------------------------------------------------|

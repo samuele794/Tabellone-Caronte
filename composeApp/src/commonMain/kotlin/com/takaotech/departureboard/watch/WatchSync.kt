@@ -13,13 +13,13 @@ interface WatchSync {
     val connected: StateFlow<Boolean>
 
     /**
-     * Ultimo treno scelto per numero e poi trovato in tabellone, con etichetta e orario veri;
-     * null finché non ce n'è.
+     * Treni scelti per numero e poi trovati in tabellone, con etichetta e orario veri; vuoto
+     * finché non ce n'è.
      */
-    val completed: StateFlow<WatchSelection?>
+    val completed: StateFlow<List<WatchSelection>>
 
-    /** Il treno da seguire è cambiato (null = nessuno): va mandato al watch. */
-    fun selectionChanged(selection: WatchSelection?)
+    /** I treni da seguire sono cambiati (anche nessuno): vanno mandati al watch. */
+    fun trainsChanged(trains: List<WatchSelection>)
 
     /** Treni in partenza da [station], tra cui scegliere quello da seguire. */
     suspend fun candidates(source: StationSource, station: Station): List<WatchedTrain>

@@ -56,6 +56,25 @@ class RefreshPolicyTest {
     }
 
     @Test
+    fun `passato un treno senza vederlo sparire si controlla subito il successivo`() {
+        val later =
+            selection.copy(trainNumber = "91833", label = "R 91833 → VIGNOLA", time = "20:18")
+        val saved = WatchSnapshot(
+            selection, train, WatchStatus.NotOnBoard, at("19:00"), plan = listOf(selection, later),
+        )
+        assertEquals(
+            at("19:45"),
+            RefreshPolicy.nextRefreshAt(saved, at("19:45"), foreground = false)
+        )
+        // Con un solo treno, invece, si aspetta la fascia di domani.
+        val alone = saved.copy(plan = listOf(selection))
+        assertEquals(
+            at("17:48", day = 27),
+            RefreshPolicy.nextRefreshAt(alone, at("19:45"), foreground = false)
+        )
+    }
+
+    @Test
     fun `fuori fascia in background si riparte all'inizio della fascia`() {
         val now = at("12:00")
         assertEquals(

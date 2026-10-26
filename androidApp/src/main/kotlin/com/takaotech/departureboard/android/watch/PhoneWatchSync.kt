@@ -11,10 +11,11 @@ import com.takaotech.departureboard.live.SettingsStore
 import com.takaotech.departureboard.rfi.Station
 import com.takaotech.departureboard.watch.TrainTracker
 import com.takaotech.departureboard.watch.WatchPaths
+import com.takaotech.departureboard.watch.WatchPlan
 import com.takaotech.departureboard.watch.WatchSelection
 import com.takaotech.departureboard.watch.WatchSnapshot
 import com.takaotech.departureboard.watch.WatchSync
-import com.takaotech.departureboard.watch.encodeWatchSelection
+import com.takaotech.departureboard.watch.encodeWatchTrains
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +31,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 /**
- * Lo smartwatch visto dal telefono, con il Wearable Data Layer: il treno scelto e i suoi
+ * Lo smartwatch visto dal telefono, con il Wearable Data Layer: i treni scelti e i loro
  * controlli vanno al watch come DataItem, che il sistema consegna appena il watch è raggiungibile.
  *
  * Senza Google Play Services o senza app Wear OS le chiamate falliscono: il watch risulta
@@ -49,19 +50,17 @@ class PhoneWatchSync(
     private val connectedState = MutableStateFlow(false)
     override val connected = connectedState.asStateFlow()
 
-    private val completedState = MutableStateFlow<WatchSelection?>(null)
+    private val completedState = MutableStateFlow<List<WatchSelection>>(emptyList())
     override val completed = completedState.asStateFlow()
 
-    /** Ultima selezione da mandare; null finché non ce n'è una (anche "nessun treno"). */
-    private val pending = MutableStateFlow<Pending?>(null)
-
-    private class Pending(val selection: WatchSelection?) {
-        override fun equals(other: Any?) = other is Pending && other.selection == selection
-        override fun hashCode() = selection.hashCode()
-    }
+    /** Ultimi treni da mandare; null finché non ce ne sono (anche nessuno). */
+    private val pending = MutableStateFlow<List<WatchSelection>?>(null)
 
     private val tracking = Mutex()
-    private var lastTracked: Pair<TimeSource.Monotonic.ValueTimeMark, WatchSnapshot>? = null
+
+    /** Ultimo controllo, con i treni per cui è stato fatto. */
+    private var lastTracked: Triple<TimeSource.Monotonic.ValueTimeMark, List<WatchSelection>, WatchSnapshot>? =
+        null
 
     init {
         capabilityClient.addListener(::onCapabilityChanged, WatchPaths.WATCH_CAPABILITY)
@@ -77,9 +76,9 @@ class PhoneWatchSync(
                 DebugLog.d(TAG) { "Smartwatch non disponibili (${e.message})" }
             }
         }
-        // Una selezione alla volta, e solo l'ultima se nel frattempo è cambiata di nuovo.
+        // Un elenco alla volta, e solo l'ultimo se nel frattempo è cambiato di nuovo.
         scope.launch {
-            pending.filterNotNull().collect { put(WatchPaths.SELECTION, encodeWatchSelection(it.selection)) }
+            pending.filterNotNull().collect { put(WatchPaths.SELECTION, encodeWatchTrains(it)) }
         }
     }
 
@@ -87,44 +86,51 @@ class PhoneWatchSync(
         connectedState.value = info.nodes.isNotEmpty()
     }
 
-    override fun selectionChanged(selection: WatchSelection?) {
-        pending.value = Pending(selection)
+    override fun trainsChanged(trains: List<WatchSelection>) {
+        pending.value = trains
     }
 
     override suspend fun candidates(source: StationSource, station: Station) =
         tracker.candidates(source, station)
 
     /**
-     * Controlla il treno salvato nelle impostazioni e manda l'esito al watch. App, tile e
-     * complication del watch possono chiederlo quasi insieme: entro [REUSE] si rimanda il
-     * controllo appena fatto. [request] è il numero di richiesta del watch, che torna nel DataItem.
+     * Controlla i treni salvati nelle impostazioni, partendo dallo stato del watch ([state]: il
+     * treno che mostra e quelli già partiti), e manda l'esito al watch. App, tile e complication
+     * del watch possono chiederlo quasi insieme: entro [REUSE] si rimanda il controllo appena
+     * fatto. [request] è il numero di richiesta del watch, che torna nel DataItem.
      */
-    suspend fun trackAndPublish(request: String) {
-        val selection = settingsStore.load().watch
-        val snapshot = if (selection == null) {
+    suspend fun trackAndPublish(request: String, state: WatchSnapshot) {
+        val trains = settingsStore.load().followedTrains
+        val snapshot = if (trains.isEmpty()) {
             WatchSnapshot()
         } else {
             tracking.withLock {
-                lastTracked?.takeIf { (at, last) -> selection.sameTrain(last.selection) && at.elapsedNow() < REUSE }?.second
-                    ?: tracker.track(selection).also { lastTracked = TimeSource.Monotonic.markNow() to it }
+                lastTracked?.takeIf { (at, tracked) -> tracked == trains && at.elapsedNow() < REUSE }?.third
+                    ?: tracker.track(trains, state).also {
+                        lastTracked = Triple(TimeSource.Monotonic.markNow(), trains, it)
+                    }
             }
         }
         put(WatchPaths.TRAIN, snapshot.encode(), request)
-        val seen = snapshot.selection
-        if (selection != null && seen != null && selection.orDetailsOf(seen) != selection) {
-            trainSeen(selection, seen)
-        }
+        val completed = WatchPlan.withDetails(trains, snapshot.plan)
+        if (completed != trains) trainsSeen(trains, completed)
     }
 
     /**
-     * Il treno [chosen], scelto solo per numero, è comparso in tabellone: etichetta e orario di
-     * [seen] vanno nelle impostazioni, al tabellone se è aperto ([completed]) e al watch.
+     * Treni di [chosen], scelti solo per numero, comparsi in tabellone: etichetta, orario e ordine
+     * di [found] vanno nelle impostazioni, al tabellone se è aperto ([completed]) e al watch.
      */
-    private suspend fun trainSeen(chosen: WatchSelection, seen: WatchSelection) {
-        DebugLog.d(TAG) { "${chosen.label} trovato in tabellone: ${seen.label}" }
-        completedState.value = seen
-        selectionChanged(seen)
-        settingsStore.update { if (it.watch == chosen) it.copy(watch = seen) else it }
+    private suspend fun trainsSeen(chosen: List<WatchSelection>, found: List<WatchSelection>) {
+        DebugLog.d(TAG) {
+            "Trovati in tabellone: ${
+                found.filterNot(chosen::contains).map { it.label }
+            }"
+        }
+        completedState.value = found
+        trainsChanged(found)
+        settingsStore.update {
+            if (it.followedTrains == chosen) it.copy(watch = null, watchTrains = found) else it
+        }
     }
 
     /** Pubblica [json] come DataItem urgente su [path]: il watch lo riceve subito, non a lotti. */

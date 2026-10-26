@@ -54,7 +54,7 @@ class TrainTrackerTest {
         delayText = "Cancellato",
     )
 
-    private class FakeSource(private val board: () -> RfiBoard) : BoardSource {
+    private class FakeSource(private val board: (Station) -> RfiBoard) : BoardSource {
         override val source = StationSource.Rfi
         override val defaultStation = Station("1", "X")
         val requests = mutableListOf<Pair<Station, BoardMode>>()
@@ -62,13 +62,17 @@ class TrainTrackerTest {
         override suspend fun stations() = emptyList<Station>()
         override suspend fun board(station: Station, mode: BoardMode): RfiBoard {
             requests += station to mode
-            return board()
+            return board(station)
         }
 
         override fun close() = Unit
     }
 
     private fun tracker(source: FakeSource) = TrainTracker(mapOf(StationSource.Rfi to source), clock)
+
+    /** Un treno solo, mai controllato prima. */
+    private suspend fun TrainTracker.track(selection: WatchSelection) =
+        track(listOf(selection), WatchSnapshot())
 
     private fun boardOf(vararg trains: RfiTrain) =
         RfiBoard(bologna.name, BoardMode.Departures, trains.toList(), emptyList())
@@ -121,6 +125,56 @@ class TrainTrackerTest {
         assertEquals(WatchStatus.OnBoard, seen.status)
         assertEquals(selection, seen.selection)
     }
+
+    private val modena = Station("903", "MODENA")
+
+    /** Il 752 da Modena, alle 20:00. */
+    private val evening =
+        WatchSelection(StationSource.Rfi, modena, "752", "ICN 752 → MILANO C.LE", "20:00")
+
+    @Test
+    fun `partito il treno mostrato si controlla subito il successivo, anche da un'altra stazione`() =
+        runBlocking {
+            val source =
+                FakeSource { station -> if (station == modena) boardOf(milano) else boardOf() }
+            val seen = WatchSnapshot(
+                selection,
+                null,
+                WatchStatus.OnBoard,
+                now.toEpochMilliseconds() - 120_000
+            )
+                .planned(listOf(evening, selection), now)
+            assertEquals(selection, seen.selection)
+
+            val snapshot = tracker(source).track(listOf(evening, selection), seen)
+
+            assertEquals(listOf(bologna, modena), source.requests.map { it.first })
+            assertEquals(listOf(selection.key), snapshot.departed)
+            assertEquals(
+                evening.copy(label = "ICN 752 → MILANO C.LE", time = "20:00"),
+                snapshot.selection
+            )
+            assertEquals(WatchStatus.OnBoard, snapshot.status)
+            assertEquals("752", snapshot.train?.number)
+        }
+
+    @Test
+    fun `un treno scelto per numero si cerca anche se non è quello mostrato, e va al suo posto`() =
+        runBlocking {
+            // Il 752 parte alle 06:20: trovato alle 19:10, è già passato e si resta sul 91831.
+            val chosen = WatchSelection.byNumber(StationSource.Rfi, modena, "752")
+            val source =
+                FakeSource { station -> if (station == modena) boardOf(milano) else boardOf(vignola) }
+
+            val snapshot = tracker(source).track(listOf(chosen, selection), WatchSnapshot())
+
+            assertEquals("06:20", snapshot.plan.first().time)
+            assertEquals(listOf(chosen.key, selection.key), snapshot.plan.map { it.key })
+            assertEquals(selection, snapshot.selection)
+            assertEquals(WatchStatus.OnBoard, snapshot.status)
+            // Ogni monitor una volta sola.
+            assertEquals(listOf(modena, bologna), source.requests.map { it.first })
+        }
 
     @Test
     fun `un errore del monitor finisce nello snapshot`() = runBlocking {

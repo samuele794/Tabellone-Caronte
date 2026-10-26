@@ -9,9 +9,10 @@ import java.time.format.DateTimeParseException
 import kotlin.math.abs
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.toKotlinInstant
 
 /**
- * Quando aggiornare il treno seguito. Il dato cambia solo attorno alla partenza: da
+ * Quando aggiornare il treno mostrato. Il dato cambia solo attorno alla partenza: da
  * [WINDOW_BEFORE] prima a [WINDOW_AFTER] dopo (ritardo compreso). Fuori da lì il watch non chiede
  * nulla al telefono e non accende la radio; dentro, più spesso man mano che il treno si avvicina.
  *
@@ -49,8 +50,13 @@ object RefreshPolicy {
     /**
      * Quando fare il prossimo aggiornamento (millisecondi dall'epoch; già passato = subito), con
      * l'app aperta ([foreground]) o in background. null se non c'è nessun treno da seguire.
+     *
+     * Vale per il treno da mostrare adesso ([WatchSnapshot.planned]), non per quello salvato: un
+     * treno passato senza che lo si sia visto sparire lascia il posto al successivo, che si
+     * controlla subito.
      */
-    fun nextRefreshAt(snapshot: WatchSnapshot, now: Long, foreground: Boolean): Long? {
+    fun nextRefreshAt(saved: WatchSnapshot, now: Long, foreground: Boolean): Long? {
+        val snapshot = saved.planned(saved.followed, Instant.ofEpochMilli(now).toKotlinInstant())
         if (snapshot.selection == null) return null
         val last = snapshot.lastAttemptAt
         if (last == 0L) return now

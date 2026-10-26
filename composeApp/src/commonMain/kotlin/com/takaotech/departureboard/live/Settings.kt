@@ -26,6 +26,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
@@ -188,7 +189,7 @@ private fun MainSettings(state: LiveBoardState, onOpen: (SettingsPage) -> Unit) 
             onOpen(SettingsPage.Appearance)
         }
         if (state.watchSync != null) {
-            MenuRow(SettingsPage.Watch.title, state.watchSelection?.label ?: "Nessun treno") {
+            MenuRow(SettingsPage.Watch.title, watchSummary(state)) {
                 onOpen(SettingsPage.Watch)
             }
         }
@@ -376,66 +377,88 @@ private fun AppearanceSettings(state: LiveBoardState, knowsCharging: Boolean) {
 @Composable
 private fun WatchSettings(state: LiveBoardState) {
     val sync = state.watchSync ?: return
-    var pickWatchStation by rememberSaveable { mutableStateOf(false) }
+    var pickStation by rememberSaveable { mutableStateOf(false) }
 
-    /** Stazione di cui scegliere il treno; null a dialogo chiuso. */
-    var pickWatchTrain by remember { mutableStateOf<Pair<StationSource, Station>?>(null) }
-    val watchSelection = state.watchSelection
-    val watchSource = watchSelection?.source ?: state.source
-    val watchStation = watchSelection?.station ?: state.station
+    /** Stazione di cui scegliere il treno da aggiungere; null a dialogo chiuso. */
+    var pickTrain by remember { mutableStateOf<Pair<StationSource, Station>?>(null) }
     val connected by sync.connected.collectAsState()
 
-    StationField(watchSource, watchStation, onClick = { pickWatchStation = true })
-    ReadOnlyField(
-        value = watchSelection?.label ?: "Nessuno",
-        label = "Treno da seguire",
-        onClick = { pickWatchTrain = watchSource to watchStation },
+    Text(
+        "Il watch mostra un treno alla volta, nell'ordine delle partenze: il successivo quando " +
+                "il precedente sparisce dal tabellone. Gli stessi treni si seguono ogni giorno.",
+        style = MaterialTheme.typography.bodySmall,
     )
-    if (watchSelection?.awaitingDetails == true) {
+    if (state.watchTrains.isEmpty()) {
         Text(
-            "Destinazione e orario arriveranno quando il treno comparirà in tabellone",
+            "Nessun treno",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else {
+        Column {
+            state.watchTrains.forEach { train ->
+                WatchTrainRow(train, onRemove = { state.unfollowOnWatch(train) })
+            }
+        }
+    }
+    OutlinedButton(onClick = { pickStation = true }) { Text("Aggiungi un treno") }
+    if (!connected) {
+        Text(
+            "Nessuno smartwatch collegato: i treni arriveranno al prossimo collegamento",
             style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
         )
     }
-    Text(
-        if (connected) {
-            "Lo stesso treno viene seguito ogni giorno"
-        } else {
-            "Nessuno smartwatch collegato: la scelta arriverà al prossimo collegamento"
-        },
-        style = MaterialTheme.typography.bodySmall,
-        // L'avviso spicca; la nota sul treno ricorrente no.
-        color = if (connected) Color.Unspecified else MaterialTheme.colorScheme.primary,
-    )
 
-    if (pickWatchStation) {
+    if (pickStation) {
         StationDialog(
             state,
-            currentSource = watchSource,
-            currentStation = watchStation,
-            // Senza treno la stazione non serve: si passa subito alla scelta del treno.
+            currentSource = state.source,
+            currentStation = state.station,
             onSelect = { source, station ->
-                pickWatchStation = false
-                pickWatchTrain = source to station
+                pickStation = false
+                pickTrain = source to station
             },
-            onDismiss = { pickWatchStation = false },
+            onDismiss = { pickStation = false },
         )
     }
 
-    pickWatchTrain?.let { (source, station) ->
+    pickTrain?.let { (source, station) ->
         TrainDialog(
             state,
             source,
             station,
-            currentNumber = watchSelection?.takeIf { it.station == station }?.trainNumber,
-            onSelect = { selection ->
-                // Riscrivendo il numero del treno già trovato in tabellone non se ne perdono i dati.
-                state.watchSelection = selection?.orDetailsOf(watchSelection)
-                pickWatchTrain = null
+            followed = state.watchTrains.filter { it.source == source && it.station == station }
+                .mapTo(HashSet()) { it.trainNumber },
+            onSelect = { train ->
+                state.followOnWatch(train)
+                pickTrain = null
             },
-            onDismiss = { pickWatchTrain = null },
+            onDismiss = { pickTrain = null },
         )
     }
+}
+
+/** Un treno seguito: etichetta, stazione e orario (o che lo si aspetta), e il tasto per toglierlo. */
+@Composable
+private fun WatchTrainRow(train: WatchSelection, onRemove: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+            Text(train.label, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "${train.station.name} · ${train.time ?: "orario quando comparirà in tabellone"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = onRemove) { Icon(Close, contentDescription = "Togli ${train.label}") }
+    }
+}
+
+private fun watchSummary(state: LiveBoardState): String = when (state.watchTrains.size) {
+    0 -> "Nessun treno"
+    1 -> state.watchTrains.single().label
+    else -> "${state.watchTrains.size} treni"
 }
 
 @Composable
@@ -479,6 +502,8 @@ private val ArrowBack =
     materialIcon("M20,11H7.83l5.59,-5.59L12,4l-8,8 8,8 1.41,-1.41L7.83,13H20v-2z")
 private val ChevronRight =
     materialIcon("M10,6L8.59,7.41 13.17,12l-4.58,4.59L10,18l6,-6z")
+private val Close =
+    materialIcon("M19,6.41L17.59,5 12,10.59 6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 12,13.41 17.59,19 19,17.59 13.41,12z")
 
 @Composable
 private fun SwitchRow(
@@ -729,8 +754,8 @@ private fun StationDialog(
 }
 
 /**
- * Treni in partenza da [station] tra cui scegliere quello da seguire sullo smartwatch, più
- * "Nessuno"; [currentNumber] è quello seguito adesso, se è di questa stazione.
+ * Treni in partenza da [station] tra cui scegliere quello da aggiungere a quelli seguiti sullo
+ * smartwatch; [followed] sono i numeri dei treni di questa stazione già seguiti.
  *
  * Il numero scritto filtra l'elenco; se il treno non c'è (non è ancora in tabellone, o le partenze
  * non si leggono) lo si segue lo stesso, ed etichetta e orario arrivano quando compare.
@@ -740,8 +765,8 @@ private fun TrainDialog(
     state: LiveBoardState,
     source: StationSource,
     station: Station,
-    currentNumber: String?,
-    onSelect: (WatchSelection?) -> Unit,
+    followed: Set<String>,
+    onSelect: (WatchSelection) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var number by rememberSaveable { mutableStateOf("") }
@@ -782,12 +807,12 @@ private fun TrainDialog(
                     Modifier.padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text("Treno da seguire", style = MaterialTheme.typography.headlineSmall)
+                    Text("Aggiungi un treno", style = MaterialTheme.typography.headlineSmall)
                     Text(station.name, style = MaterialTheme.typography.titleSmall)
                     Text(
                         "Scegli tra le partenze delle prossime ore o scrivi il numero di un treno " +
                                 "che non c'è ancora: destinazione e orario arriveranno quando " +
-                                "comparirà in tabellone. Lo stesso numero viene seguito ogni giorno.",
+                                "comparirà in tabellone.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Row(
@@ -828,14 +853,11 @@ private fun TrainDialog(
                         )
 
                         else -> LazyColumn(Modifier.fillMaxSize()) {
-                            if (typed.isEmpty()) item {
-                                TrainItem("Nessuno", null, currentNumber == null) { onSelect(null) }
-                            }
                             items(list.filter { it.number.startsWith(typed) }) { train ->
                                 TrainItem(
                                     title = "${train.category} ${train.number} · ${train.time}",
                                     subtitle = train.destination,
-                                    selected = train.number == currentNumber,
+                                    selected = train.number in followed,
                                     onClick = {
                                         onSelect(
                                             WatchSelection.of(

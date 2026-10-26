@@ -9,7 +9,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 /**
- * Riceve dal telefono il treno da seguire e i suoi controlli anche ad app chiusa, e li salva per
+ * Riceve dal telefono i treni da seguire e i loro controlli anche ad app chiusa, e li salva per
  * app, tile e complication.
  */
 class WatchDataListenerService : WearableListenerService() {
@@ -19,12 +19,12 @@ class WatchDataListenerService : WearableListenerService() {
         val items = events.filter { it.type == DataEvent.TYPE_CHANGED }
             .map { it.dataItem.uri.path to DataMapItem.fromDataItem(it.dataItem).dataMap }
         val app = wearApp
-        val selectionChanged = runBlocking {
+        val trainsChanged = runBlocking {
             items.map { (path, map) -> app.refresher.onDataItem(path, map) }.any { it }
         }
-        // Treno nuovo: lo si chiede subito, senza attendere che qualcuno apra l'app, e si
-        // riprogramma il background sui suoi orari.
-        if (selectionChanged) app.scope.launch {
+        // Treni nuovi: li si chiede subito, senza attendere che qualcuno apra l'app, e si
+        // riprogramma il background sui loro orari.
+        if (trainsChanged) app.scope.launch {
             app.refresher.refresh(RefreshTrigger.Manual)
             RefreshWorker.schedule(app)
         }

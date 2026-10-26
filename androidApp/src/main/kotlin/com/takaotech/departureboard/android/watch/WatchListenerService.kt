@@ -5,6 +5,7 @@ import com.google.android.gms.wearable.WearableListenerService
 import com.takaotech.departureboard.android.services
 import com.takaotech.departureboard.debuglog.DebugLog
 import com.takaotech.departureboard.watch.WatchPaths
+import com.takaotech.departureboard.watch.WatchRefreshRequest
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.seconds
@@ -24,7 +25,8 @@ class WatchListenerService : WearableListenerService() {
         val services = services
         runBlocking {
             val done = withTimeoutOrNull(TIMEOUT) {
-                services.watchSync.trackAndPublish(request = event.data.decodeToString())
+                val request = WatchRefreshRequest.decode(event.data.decodeToString())
+                services.watchSync.trackAndPublish(request.request, request.state)
             }
             if (done == null) DebugLog.d(PhoneWatchSync.TAG) { "Controllo per il watch scaduto" }
         }

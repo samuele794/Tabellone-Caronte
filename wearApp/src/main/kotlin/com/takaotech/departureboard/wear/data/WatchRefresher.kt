@@ -19,10 +19,11 @@ import com.takaotech.departureboard.rfi.RfiBoardSource
 import com.takaotech.departureboard.rfi.RfiClient
 import com.takaotech.departureboard.watch.TrainTracker
 import com.takaotech.departureboard.watch.WatchPaths
+import com.takaotech.departureboard.watch.WatchRefreshRequest
 import com.takaotech.departureboard.watch.WatchSelection
 import com.takaotech.departureboard.watch.WatchSnapshot
 import com.takaotech.departureboard.watch.WatchStore
-import com.takaotech.departureboard.watch.decodeWatchSelection
+import com.takaotech.departureboard.watch.decodeWatchTrains
 import com.takaotech.departureboard.wear.complication.TrainComplicationService
 import com.takaotech.departureboard.wear.net.WatchNetwork
 import com.takaotech.departureboard.wear.tile.TrainTileService
@@ -39,6 +40,7 @@ import java.io.File
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * Tiene aggiornato il [WatchStore] del watch, in modo ibrido:
@@ -47,7 +49,8 @@ import kotlin.time.Duration.Companion.seconds
  * 2. altrimenti, se il watch ha davvero internet ([WatchNetwork]), si controlla da qui;
  * 3. altrimenti resta l'ultimo dato, segnato con il motivo ([WatchSnapshot.offline]).
  *
- * La selezione arriva solo dal telefono ([WatchPaths.SELECTION]): qui non si sceglie nulla.
+ * I treni arrivano solo dal telefono ([WatchPaths.SELECTION]): qui non si sceglie nulla. Quale
+ * mostrare lo decide [WatchSnapshot.planned], a ogni controllo.
  */
 class WatchRefresher(private val context: Context, val store: WatchStore) {
 
@@ -80,9 +83,11 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
             return
         }
         refreshing.withLock {
-            val snapshot = store.load()
-            val selection = snapshot.selection ?: return
             val now = System.currentTimeMillis()
+            // Un treno passato da un pezzo senza che lo si sia visto sparire lascia il posto al successivo.
+            val snapshot =
+                store.load().let { it.planned(it.followed, Instant.fromEpochMilliseconds(now)) }
+            val selection = snapshot.selection ?: return
             if (trigger != RefreshTrigger.Manual) {
                 val due =
                     RefreshPolicy.nextRefreshAt(snapshot, now, trigger == RefreshTrigger.Foreground)
@@ -90,18 +95,25 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
             }
             busy.value = true
             try {
-                if (askPhone()) return
+                if (askPhone(snapshot)) return
                 // Wi-Fi e LTE costano molto più del Bluetooth: non a ogni giro.
                 if (trigger != RefreshTrigger.Manual && now - snapshot.lastAttemptAt < DIRECT_MIN.inWholeMilliseconds) {
                     DebugLog.d(TAG) { "Rete del watch provata da poco, si attende" }
                     return
                 }
-                val outcome = network.withInternet(probeUrl(selection.source)) { http -> direct(selection, http) }
+                val outcome = network.withInternet(probeUrl(selection.source)) { http ->
+                    direct(
+                        snapshot,
+                        http
+                    )
+                }
                 when (outcome) {
                     is WatchNetwork.Outcome.Online -> applyTrain(outcome.value)
                     is WatchNetwork.Outcome.Offline -> save { latest ->
-                        if (selection.sameTrain(latest.selection)) {
-                            latest.copy(
+                        val moved =
+                            latest.planned(latest.followed, Instant.fromEpochMilliseconds(now))
+                        if (moved.selection?.sameTrain(selection) == true) {
+                            moved.copy(
                                 offline = outcome.reason,
                                 attemptedAt = System.currentTimeMillis()
                             )
@@ -117,10 +129,10 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
     }
 
     /**
-     * Chiede il controllo al telefono e ne attende la risposta; false se nessun telefono con l'app
-     * è raggiungibile o non risponde in tempo.
+     * Chiede il controllo al telefono, mandandogli lo stato del watch ([state]), e ne attende la
+     * risposta; false se nessun telefono con l'app è raggiungibile o non risponde in tempo.
      */
-    private suspend fun askPhone(): Boolean {
+    private suspend fun askPhone(state: WatchSnapshot): Boolean {
         val nodes = try {
             capabilityClient.getCapability(WatchPaths.PHONE_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
                 .await().nodes
@@ -142,7 +154,8 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
         }
         return try {
             dataClient.addListener(listener).await()
-            messageClient.sendMessage(phone.id, WatchPaths.REFRESH, id.encodeToByteArray()).await()
+            val request = WatchRefreshRequest(id, state).encode().encodeToByteArray()
+            messageClient.sendMessage(phone.id, WatchPaths.REFRESH, request).await()
             val snapshot = withTimeoutOrNull(PHONE_TIMEOUT) { reply.await() }
             snapshot?.let { applyTrain(it) }
             snapshot != null
@@ -156,18 +169,18 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
         }
     }
 
-    /** Controllo da qui, sulla rete del watch. */
-    private suspend fun direct(selection: WatchSelection, http: HttpClient): WatchSnapshot {
+    /** Controllo da qui, sulla rete del watch, a partire da [state]. */
+    private suspend fun direct(state: WatchSnapshot, http: HttpClient): WatchSnapshot {
         val rfi = RfiClient(httpClient = http)
         val fnm = FnmClient(httpClient = http)
         fnmClient = fnm
         try {
             // FnmBoardSource non si chiude: chiuderebbe anche la chiave, che resta per la prossima volta.
-            val source = when (selection.source) {
-                StationSource.Rfi -> RfiBoardSource(rfi)
-                StationSource.Fnm -> FnmBoardSource(fnm, fnmKeys)
-            }
-            return TrainTracker(mapOf(selection.source to source)).track(selection)
+            val sources = mapOf(
+                StationSource.Rfi to RfiBoardSource(rfi),
+                StationSource.Fnm to FnmBoardSource(fnm, fnmKeys),
+            )
+            return TrainTracker(sources).track(state.followed, state)
         } finally {
             fnmClient = null
             rfi.close()
@@ -194,8 +207,8 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
     }
 
     /**
-     * Un DataItem arrivato dal telefono; true se ha cambiato il treno da seguire (non solo
-     * etichetta e orario dello stesso treno).
+     * Un DataItem arrivato dal telefono; true se ha cambiato i treni da seguire (non solo
+     * etichetta, orario e ordine degli stessi treni).
      */
     suspend fun onDataItem(path: String?, map: DataMap): Boolean = when (path) {
         WatchPaths.SELECTION -> applySelection(map)
@@ -208,26 +221,27 @@ class WatchRefresher(private val context: Context, val store: WatchStore) {
     }
 
     private suspend fun applySelection(map: DataMap): Boolean {
-        val selection = map.getString(WatchPaths.KEY_JSON)?.let(::decodeWatchSelection)
+        val trains = map.getString(WatchPaths.KEY_JSON)?.let(::decodeWatchTrains) ?: return false
         var changed = false
         save { latest ->
-            changed =
-                latest.selection != selection && selection?.sameTrain(latest.selection) != true
-            latest.withSelection(selection)
+            changed = trains.keys() != latest.followed.keys()
+            latest.planned(trains, Instant.fromEpochMilliseconds(System.currentTimeMillis()))
         }
         return changed
     }
 
     /**
-     * Un controllo, dal telefono o da qui. Vale solo per il treno seguito adesso: un DataItem
-     * vecchio di un altro treno non deve riportarlo indietro. Dello stesso treno può portare
-     * etichetta e orario, se era stato scelto solo per numero ed è comparso in tabellone.
+     * Un controllo, dal telefono o da qui: è il nuovo stato. Vale solo se è per gli stessi treni
+     * e non è più vecchio di quello che c'è: un DataItem di prima non deve riportare indietro né
+     * i treni né quelli già partiti.
      */
     private suspend fun applyTrain(snapshot: WatchSnapshot) = save { latest ->
-        val sameTrain =
-            snapshot.selection == latest.selection || snapshot.selection?.sameTrain(latest.selection) == true
-        if (sameTrain) snapshot.after(latest) else latest
+        val current = snapshot.followed.keys() == latest.followed.keys() &&
+                snapshot.updatedAt >= latest.updatedAt
+        if (current) snapshot else latest
     }
+
+    private fun List<WatchSelection>.keys() = mapTo(HashSet()) { it.key }
 
     /** Salva e fa ridisegnare tile e complication, ma solo se quello che mostrano è cambiato. */
     private suspend fun save(transform: (WatchSnapshot) -> WatchSnapshot) {

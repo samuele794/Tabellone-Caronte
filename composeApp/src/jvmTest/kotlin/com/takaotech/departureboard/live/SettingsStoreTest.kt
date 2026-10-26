@@ -700,14 +700,14 @@ class SettingsStoreTest {
         }
     }
 
-    /** Smartwatch finto: ricorda le selezioni ricevute. */
+    /** Smartwatch finto: ricorda i treni ricevuti. */
     private class FakeWatchSync : WatchSync {
         override val connected = MutableStateFlow(true)
-        override val completed = MutableStateFlow<WatchSelection?>(null)
-        val sent = mutableListOf<WatchSelection?>()
+        override val completed = MutableStateFlow<List<WatchSelection>>(emptyList())
+        val sent = mutableListOf<List<WatchSelection>>()
 
-        override fun selectionChanged(selection: WatchSelection?) {
-            sent += selection
+        override fun trainsChanged(trains: List<WatchSelection>) {
+            sent += trains
         }
 
         override suspend fun candidates(source: StationSource, station: Station) = emptyList<WatchedTrain>()
@@ -718,64 +718,124 @@ class SettingsStoreTest {
         Station("837", "BOLOGNA CENTRALE"),
         "91831",
         "R 91831 → VIGNOLA",
+        time = "19:18",
+    )
+
+    private val toSaronno = WatchSelection(
+        StationSource.Fnm,
+        cadorna,
+        "2615",
+        "R 2615 → SARONNO",
+        time = "07:42",
     )
 
     @Test
-    fun `il treno dello smartwatch sopravvive alla riapertura e torna al watch`() = runBlocking {
+    fun `i treni dello smartwatch sopravvivono alla riapertura e tornano al watch`() = runBlocking {
         SettingsStore(path).use { store ->
             val watch = FakeWatchSync()
             val state = LiveBoardState(sources, settingsStore = store, watchSync = watch)
             state.restoreSettings()
-            state.watchSelection = vignola
-            assertEquals(listOf(null, vignola), watch.sent)
-            store.awaitSaved(BoardSettings(Selection(StationSource.Rfi, milano), watch = vignola))
+            state.followOnWatch(vignola)
+            assertEquals(listOf(emptyList(), listOf(vignola)), watch.sent)
+            store.awaitSaved(
+                BoardSettings(
+                    Selection(StationSource.Rfi, milano),
+                    watchTrains = listOf(vignola)
+                )
+            )
         }
 
         SettingsStore(path).use { store ->
             val watch = FakeWatchSync()
             val state = LiveBoardState(sources, settingsStore = store, watchSync = watch)
-            assertNull(state.watchSelection)
+            assertEquals(emptyList(), state.watchTrains)
             state.restoreSettings()
-            assertEquals(vignola, state.watchSelection)
-            // Al ripristino la selezione si rimanda al watch, che potrebbe averla persa.
-            assertEquals(listOf<WatchSelection?>(vignola), watch.sent)
+            assertEquals(listOf(vignola), state.watchTrains)
+            // Al ripristino i treni si rimandano al watch, che potrebbe averli persi.
+            assertEquals(listOf(listOf(vignola)), watch.sent)
         }
     }
 
     @Test
-    fun `il treno scelto per numero prende i dati quando compare in tabellone`() = runBlocking {
+    fun `il treno solo di un file di prima diventa il primo dell'elenco`() = runBlocking {
+        SettingsStore(path).use { store ->
+            store.save(BoardSettings(watch = vignola))
+            store.awaitSaved(BoardSettings(watch = vignola))
+        }
+
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store, watchSync = FakeWatchSync())
+            state.restoreSettings()
+            assertEquals(listOf(vignola), state.watchTrains)
+        }
+    }
+
+    @Test
+    fun `i treni si seguono in ordine di partenza, anche aggiunti alla rinfusa`() = runBlocking {
+        SettingsStore(path).use { store ->
+            val state = LiveBoardState(sources, settingsStore = store, watchSync = FakeWatchSync())
+            state.restoreSettings()
+            val waiting = WatchSelection.byNumber(StationSource.Rfi, vignola.station, "3901")
+            state.followOnWatch(vignola)
+            state.followOnWatch(waiting)
+            state.followOnWatch(toSaronno)
+            // Lo stesso treno non si aggiunge due volte.
+            state.followOnWatch(toSaronno)
+            assertEquals(listOf(toSaronno, waiting, vignola), state.watchTrains)
+
+            state.unfollowOnWatch(waiting)
+            assertEquals(listOf(toSaronno, vignola), state.watchTrains)
+            store.awaitSaved(
+                BoardSettings(
+                    Selection(StationSource.Rfi, milano),
+                    watchTrains = listOf(toSaronno, vignola)
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `il treno scelto per numero prende i dati e il suo posto quando compare in tabellone`() =
+        runBlocking {
         SettingsStore(path).use { store ->
             val watch = FakeWatchSync()
             val state = LiveBoardState(sources, settingsStore = store, watchSync = watch)
             state.restoreSettings()
             val chosen = WatchSelection.byNumber(StationSource.Rfi, vignola.station, "91831")
-            state.watchSelection = chosen
-            val seen = vignola.copy(time = "19:18")
+            state.followOnWatch(chosen)
+            state.followOnWatch(toSaronno)
+            assertEquals(listOf(chosen, toSaronno), state.watchTrains)
 
-            // Un altro treno non tocca la scelta.
-            state.watchTrainSeen(seen.copy(trainNumber = "1"))
-            assertEquals(chosen, state.watchSelection)
+            // Un altro treno non tocca l'elenco.
+            state.watchTrainsSeen(listOf(vignola.copy(trainNumber = "1")))
+            assertEquals(listOf(chosen, toSaronno), state.watchTrains)
 
-            state.watchTrainSeen(seen)
-            assertEquals(seen, state.watchSelection)
-            assertEquals(listOf(null, chosen, seen), watch.sent)
-            store.awaitSaved(BoardSettings(Selection(StationSource.Rfi, milano), watch = seen))
+            state.watchTrainsSeen(listOf(vignola))
+            assertEquals(listOf(toSaronno, vignola), state.watchTrains)
+            assertEquals(listOf(toSaronno, vignola), watch.sent.last())
+            store.awaitSaved(
+                BoardSettings(
+                    Selection(StationSource.Rfi, milano),
+                    watchTrains = listOf(toSaronno, vignola)
+                )
+            )
 
-            // Già completato, non cambia più.
-            state.watchTrainSeen(seen.copy(label = "R 91831 → MODENA", time = "20:00"))
-            assertEquals(seen, state.watchSelection)
+            // Già completato, non cambia più; riscriverne il numero non ne perde i dati.
+            state.watchTrainsSeen(listOf(vignola.copy(label = "R 91831 → MODENA", time = "20:00")))
+            state.followOnWatch(chosen)
+            assertEquals(listOf(toSaronno, vignola), state.watchTrains)
         }
     }
 
     @Test
-    fun `senza treno salvato lo smartwatch non segue nulla`() = runBlocking {
+    fun `senza treni salvati lo smartwatch non segue nulla`() = runBlocking {
         File(path).apply { parentFile.mkdirs() }.writeText("""{"autoScroll":false}""")
 
         SettingsStore(path).use { store ->
-            assertNull(store.load().watch)
+            assertEquals(emptyList(), store.load().followedTrains)
             val state = LiveBoardState(sources, settingsStore = store, watchSync = FakeWatchSync())
             state.restoreSettings()
-            assertNull(state.watchSelection)
+            assertEquals(emptyList(), state.watchTrains)
         }
     }
 

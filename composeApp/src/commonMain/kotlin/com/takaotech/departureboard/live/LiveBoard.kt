@@ -52,6 +52,7 @@ import com.takaotech.departureboard.debuglog.DebugLog
 import com.takaotech.departureboard.rfi.BoardMode
 import com.takaotech.departureboard.rfi.RfiMapper
 import com.takaotech.departureboard.rfi.Station
+import com.takaotech.departureboard.watch.WatchPlan
 import com.takaotech.departureboard.watch.WatchSelection
 import com.takaotech.departureboard.watch.WatchSync
 import com.takaotech.departureboard.watch.WatchedTrain
@@ -140,7 +141,7 @@ class LiveBoardState(
     private var backgroundVolumeState by mutableIntStateOf(DEFAULT_BACKGROUND_VOLUME)
     private var introState by mutableStateOf(true)
     private var dashboardState by mutableStateOf(false)
-    private var watchSelectionState by mutableStateOf<WatchSelection?>(null)
+    private var watchTrainsState by mutableStateOf<List<WatchSelection>>(emptyList())
 
     init {
         backgroundSound?.volume = DEFAULT_BACKGROUND_VOLUME / 100f
@@ -373,27 +374,42 @@ class LiveBoardState(
             changed(Setting.Dashboard)
         }
 
-    /** Treno seguito sullo smartwatch (null = nessuno); ogni cambio arriva subito al watch. */
-    var watchSelection: WatchSelection?
-        get() = watchSelectionState
-        set(value) {
-            watchSelectionState = value
-            watchSync?.selectionChanged(value)
+    /**
+     * Treni seguiti sullo smartwatch, in ordine di osservazione ([WatchPlan]); il watch ne mostra
+     * uno alla volta. Ogni cambio arriva subito al watch.
+     */
+    var watchTrains: List<WatchSelection>
+        get() = watchTrainsState
+        private set(value) {
+            watchTrainsState = value
+            watchSync?.trainsChanged(value)
             changed(Setting.Watch)
         }
+
+    /**
+     * Segue anche [train], al suo posto nell'ordine. Riscrivendo il numero di un treno già trovato
+     * in tabellone non se ne perdono i dati.
+     */
+    fun followOnWatch(train: WatchSelection) {
+        watchTrains = WatchPlan.added(watchTrains, train)
+    }
+
+    fun unfollowOnWatch(train: WatchSelection) {
+        watchTrains = watchTrains.filterNot(train::sameTrain)
+    }
 
     /** Treni in partenza da [station] tra cui scegliere quello per lo smartwatch. */
     suspend fun watchCandidates(source: StationSource, station: Station): List<WatchedTrain> =
         checkNotNull(watchSync) { "Smartwatch non disponibile" }.candidates(source, station)
 
     /**
-     * Il treno seguito, scelto solo per numero, è comparso in tabellone ([seen]): se ne tengono
-     * etichetta e orario, qui, nelle impostazioni salvate e sul watch.
+     * Treni seguiti, scelti solo per numero, comparsi in tabellone ([seen]): se ne tengono
+     * etichetta e orario, e vanno al loro posto nell'ordine, qui, nelle impostazioni salvate e
+     * sul watch.
      */
-    fun watchTrainSeen(seen: WatchSelection) {
-        val current = watchSelection ?: return
-        val completed = current.orDetailsOf(seen)
-        if (completed != current) watchSelection = completed
+    fun watchTrainsSeen(seen: List<WatchSelection>) {
+        val completed = WatchPlan.withDetails(watchTrains, seen)
+        if (completed != watchTrains) watchTrains = completed
     }
 
     private var introPlayingState by mutableStateOf(false)
@@ -558,10 +574,10 @@ class LiveBoardState(
         if (Setting.Intro !in changedBeforeRestore) introState = saved.intro
         if (Setting.Dashboard !in changedBeforeRestore) dashboardState = saved.dashboard
         if (Setting.Watch !in changedBeforeRestore) {
-            watchSelectionState = saved.watch?.takeIf { it.source in sources }
+            watchTrainsState = saved.followedTrains.filter { it.source in sources }
         }
-        // Il watch può aver perso la selezione (app reinstallata): gliela si rimanda.
-        watchSync?.selectionChanged(watchSelectionState)
+        // Il watch può aver perso i treni (app reinstallata): glieli si rimanda.
+        watchSync?.trainsChanged(watchTrainsState)
         if (Setting.AnnounceBlink !in changedBeforeRestore) {
             announceBlinkState =
                 saved.announceBlinkSeconds.seconds.nearestOf(ANNOUNCE_BLINK_OPTIONS)
@@ -606,7 +622,7 @@ class LiveBoardState(
                 backgroundVolume = backgroundVolume,
                 intro = intro,
                 dashboard = dashboard,
-                watch = watchSelection,
+                watchTrains = watchTrains,
             )
         )
     }
@@ -841,7 +857,7 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
     LaunchedEffect(state) { state.blinkAnnouncedRows() }
     // Dopo il ripristino, che altrimenti riporterebbe la selezione salvata prima.
     LaunchedEffect(state, state.restored) {
-        if (state.restored) state.watchSync?.completed?.collect { it?.let(state::watchTrainSeen) }
+        if (state.restored) state.watchSync?.completed?.collect(state::watchTrainsSeen)
     }
     LaunchedEffect(state.source, state.restored) {
         if (state.restored && state.stations(state.source).isEmpty()) state.loadStations()
