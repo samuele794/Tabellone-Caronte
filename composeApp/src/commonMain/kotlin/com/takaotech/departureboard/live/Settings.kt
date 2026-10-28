@@ -475,7 +475,7 @@ private fun SectionTitle(text: String) {
 private fun MenuRow(title: String, summary: String, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
