@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><!-- ViaggiaTreno risponde solo in HTTP (https rimanda a http): elenco stazioni con le posizioni. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">www.viaggiatreno.it</domain>
+    </domain-config>
+</network-security-config>

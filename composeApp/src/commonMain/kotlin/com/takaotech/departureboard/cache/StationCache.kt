@@ -44,10 +44,21 @@ class StationCache(
      * Elenco di [source]: dalla cache se non è scaduto, altrimenti da [fetch], salvandolo.
      * Se [fetch] fallisce ma c'è un elenco scaduto, meglio quello che niente.
      */
-    suspend fun stations(source: StationSource, fetch: suspend () -> List<Station>): List<Station> {
+    suspend fun stations(source: StationSource, fetch: suspend () -> List<Station>): List<Station> =
+        stations(source, complete = { true }, fetch)
+
+    /**
+     * Come l'altro [stations], ma un elenco salvato che non è [complete] si riscarica anche se non
+     * è scaduto; resta il ripiego se [fetch] fallisce.
+     */
+    suspend fun stations(
+        source: StationSource,
+        complete: (List<Station>) -> Boolean,
+        fetch: suspend () -> List<Station>,
+    ): List<Station> {
         val cached = store.data.first().sources[source]
         val now = clock.now()
-        if (cached != null && now < expiry(cached)) return cached.stations
+        if (cached != null && now < expiry(cached) && complete(cached.stations)) return cached.stations
 
         val fresh = try {
             fetch()

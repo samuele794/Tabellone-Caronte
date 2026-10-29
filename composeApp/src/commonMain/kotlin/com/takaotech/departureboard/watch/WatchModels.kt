@@ -36,7 +36,7 @@ data class WatchSelection(
 
     /** Stesso treno da seguire (fornitore, stazione e numero), anche se etichetta e orario no. */
     fun sameTrain(other: WatchSelection?): Boolean =
-        other != null && source == other.source && station == other.station && trainNumber == other.trainNumber
+        other != null && source == other.source && station.id == other.station.id && trainNumber == other.trainNumber
 
     /** Con etichetta e orario di [train], visto in tabellone, se ancora mancavano. */
     fun completedWith(train: WatchedTrain): WatchSelection =

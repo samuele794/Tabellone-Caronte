@@ -38,6 +38,7 @@ class BoardViewModel(app: Application) : AndroidViewModel(app) {
         flapClatter = flapClatter,
         backgroundSound = backgroundSound,
         watchSync = services.watchSync,
+        viaggiaTreno = services.viaggiaTreno,
     )
 
     /** Cache, impostazioni e fornitori restano aperti: sono del processo ([AppServices]). */

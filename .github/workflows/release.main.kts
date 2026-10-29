@@ -45,8 +45,8 @@ import io.github.typesafegithub.workflows.dsl.workflow
 fun JobBuilder<*>.setUpGradle() {
     uses(name = "Checkout", action = Checkout())
     uses(
-        name = "Java 21",
-        action = SetupJava(distribution = SetupJava.Distribution.Temurin, javaVersion = "21"),
+        name = "Java 25",
+        action = SetupJava(distribution = SetupJava.Distribution.Temurin, javaVersion = "25"),
     )
     uses(name = "Gradle", action = ActionsSetupGradle())
 }

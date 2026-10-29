@@ -30,6 +30,7 @@ concurrent-futures = "1.3.0"
 play-services-wearable = "20.0.1"
 work = "2.12.0"
 navigation3 = "1.1.2"
+maplibre-compose = "0.20.0"
 app-version = "1.2.0"
 app-versionCode = "3"
 
@@ -52,6 +53,13 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 datastore-core-okio = { module = "androidx.datastore:datastore-core-okio", version.ref = "datastore" }
 lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 navigation3-ui = { module = "org.jetbrains.androidx.navigation3:navigation3-ui", version.ref = "navigation3" }
+maplibre-compose = { module = "org.maplibre.compose:maplibre-compose", version.ref = "maplibre-compose" }
+maplibre-compose-runtime-opengl-android = { module = "org.maplibre.compose:maplibre-compose-runtime-opengl-android", version.ref = "maplibre-compose" }
+maplibre-compose-runtime-metal-macos-arm64 = { module = "org.maplibre.compose:maplibre-compose-runtime-metal-macos-arm64", version.ref = "maplibre-compose" }
+maplibre-compose-runtime-vulkan-windows-x64 = { module = "org.maplibre.compose:maplibre-compose-runtime-vulkan-windows-x64", version.ref = "maplibre-compose" }
+maplibre-compose-runtime-vulkan-windows-arm64 = { module = "org.maplibre.compose:maplibre-compose-runtime-vulkan-windows-arm64", version.ref = "maplibre-compose" }
+maplibre-compose-runtime-vulkan-linux-x64 = { module = "org.maplibre.compose:maplibre-compose-runtime-vulkan-linux-x64", version.ref = "maplibre-compose" }
+maplibre-compose-runtime-vulkan-linux-arm64 = { module = "org.maplibre.compose:maplibre-compose-runtime-vulkan-linux-arm64", version.ref = "maplibre-compose" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 androidx-fragment = { module = "androidx.fragment:fragment", version.ref = "androidx-fragment" }
 jlayer = { module = "javazoom:jlayer", version.ref = "jlayer" }

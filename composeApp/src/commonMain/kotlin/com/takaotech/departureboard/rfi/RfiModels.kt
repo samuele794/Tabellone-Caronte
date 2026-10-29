@@ -2,9 +2,17 @@ package com.takaotech.departureboard.rfi
 
 import kotlinx.serialization.Serializable
 
-/** Una località dell'elenco RFI (`<select id="ElencoLocalita">`). */
+/**
+ * Una località dell'elenco RFI (`<select id="ElencoLocalita">`) o FNM. La [position] arriva da
+ * ViaggiaTreno insieme all'elenco; null se non è nota. Due stazioni si confrontano per [id]: una
+ * scelta salvata prima delle posizioni ne è senza.
+ */
 @Serializable
-data class Station(val id: String, val name: String)
+data class Station(val id: String, val name: String, val position: LatLng? = null)
+
+/** Coordinate WGS84 in gradi. */
+@Serializable
+data class LatLng(val lat: Double, val lon: Double)
 
 /** Quale tabella del monitor leggere: corrisponde al parametro `arrivals` dell'URL. */
 enum class BoardMode(val arrivalsParam: String) {

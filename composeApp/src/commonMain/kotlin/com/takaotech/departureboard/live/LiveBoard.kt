@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +44,8 @@ import com.takaotech.departureboard.Departure
 import com.takaotech.departureboard.DepartureBoard
 import com.takaotech.departureboard.FlapClatter
 import com.takaotech.departureboard.LocalFlapClatter
+import com.takaotech.departureboard.MapStation
+import com.takaotech.departureboard.StationMapSupported
 import com.takaotech.departureboard.announce.Announcer
 import com.takaotech.departureboard.announce.BoardAnnouncements
 import com.takaotech.departureboard.announce.PlaceNames
@@ -50,8 +53,11 @@ import com.takaotech.departureboard.cache.StationCache
 import com.takaotech.departureboard.cache.StationSource
 import com.takaotech.departureboard.debuglog.DebugLog
 import com.takaotech.departureboard.rfi.BoardMode
+import com.takaotech.departureboard.rfi.LatLng
 import com.takaotech.departureboard.rfi.RfiMapper
 import com.takaotech.departureboard.rfi.Station
+import com.takaotech.departureboard.viaggiatreno.StationPositions
+import com.takaotech.departureboard.viaggiatreno.ViaggiaTrenoClient
 import com.takaotech.departureboard.watch.WatchPlan
 import com.takaotech.departureboard.watch.WatchSelection
 import com.takaotech.departureboard.watch.WatchSync
@@ -90,7 +96,8 @@ import kotlin.time.TimeSource
  * [settingsStore] stazione, scorrimento, annunci e intervalli di aggiornamento si ritrovano alla
  * riapertura dell'app. Con un [flapClatter] il tabellone a palette crepita quando gira; con un
  * [backgroundSound] suona in loop il sottofondo di stazione. Con un [watchSync] si sceglie anche il
- * treno da seguire sullo smartwatch.
+ * treno da seguire sullo smartwatch. Con [viaggiaTreno] gli elenchi stazioni arrivano con la posizione
+ * di ogni stazione, per la mappa.
  */
 @Stable
 class LiveBoardState(
@@ -106,6 +113,8 @@ class LiveBoardState(
     val backgroundSound: BackgroundSound? = null,
     /** Collegamento con lo smartwatch; null = la piattaforma non ne ha. */
     val watchSync: WatchSync? = null,
+    /** Posizioni delle stazioni; null = la piattaforma non mostra la mappa. */
+    private val viaggiaTreno: ViaggiaTrenoClient? = null,
 ) {
     private val mapper = RfiMapper()
     private val announcements = BoardAnnouncements()
@@ -120,6 +129,79 @@ class LiveBoardState(
     fun stations(source: StationSource): List<Station> = stationLists[source].orEmpty()
 
     fun stationsError(source: StationSource): String? = stationErrors[source]
+
+    /**
+     * Posizione della stazione mostrata. Una scelta salvata prima che ci fossero le posizioni ne è
+     * senza: la si prende dall'elenco, appena caricato.
+     */
+    val stationPosition: LatLng?
+        get() = station.position ?: stations(source).firstOrNull { it.id == station.id }?.position
+
+    /** È aperta la mappa: il tabellone non si aggiorna. */
+    var showMap by mutableStateOf(false)
+        private set
+
+    /**
+     * Stazioni di tutti gli elenchi caricati che hanno una posizione, una per punto: la stessa
+     * stazione RFI e FNM (Milano Centrale) è un solo segnaposto.
+     */
+    val mapStations: List<MapStation> by derivedStateOf {
+        availableSources
+            .flatMap { source ->
+                stations(source).mapNotNull { s ->
+                    s.position?.let {
+                        Triple(
+                            it,
+                            s.name,
+                            source
+                        )
+                    }
+                }
+            }
+            .groupBy { it.first }
+            .map { (position, entries) ->
+                MapStation(
+                    entries.first().second,
+                    position,
+                    entries.map { it.third }.distinct()
+                )
+            }
+    }
+
+    /**
+     * Si apre la mappa: gli aggiornamenti si fermano e i dati del tabellone si buttano, perché al
+     * ritorno sarebbero vecchi. Il primo tabellone dopo la mappa fa da nuova base per gli annunci,
+     * così le variazioni accumulate nel frattempo non si annunciano in blocco.
+     */
+    fun openMap() {
+        showMap = true
+        departures = emptyList()
+        notices = emptyList()
+        updatedAt = null
+        error = null
+        loadedKey = null
+        lastRefresh = null
+        nextRefreshAt = null
+        nextListRefreshAt = null
+        announcer?.clear()
+        announcements.reset()
+        sources.values.forEach { it.invalidateList() }
+    }
+
+    /** Si torna al tabellone, che riparte subito con un aggiornamento. */
+    fun closeMap() {
+        showMap = false
+    }
+
+    /**
+     * Elenchi di tutti i fornitori, per la mappa: si caricano (dalla cache, se c'è) quelli non
+     * ancora caricati o ancora senza posizioni. Uno alla volta, perché condividono le posizioni.
+     */
+    suspend fun loadMapStations() {
+        availableSources
+            .filter { source -> stations(source).none { it.position != null } }
+            .forEach { loadStations(it) }
+    }
 
     var source by mutableStateOf(initialSource)
         private set
@@ -710,7 +792,12 @@ class LiveBoardState(
         stationErrors -= source
         val client = sources.getValue(source)
         try {
-            val list = stationCache?.stations(source, client::stations) ?: client.stations()
+            val fetch = suspend { located(client.stations()) }
+            // Un elenco salvato senza nessuna posizione (da prima delle posizioni, o con
+            // ViaggiaTreno giù) si riscarica; intanto resta buono come ripiego.
+            val complete =
+                { list: List<Station> -> viaggiaTreno == null || list.any { it.position != null } }
+            val list = stationCache?.stations(source, complete, fetch) ?: fetch()
             stationLists += source to list
             announcer?.places = PlaceNames(stationLists.values.flatten().map { it.name }.distinct())
         } catch (e: CancellationException) {
@@ -718,6 +805,26 @@ class LiveBoardState(
         } catch (e: Exception) {
             stationErrors += source to "Elenco stazioni non disponibile: ${e.message ?: e::class.simpleName}"
         }
+    }
+
+    /** Posizioni ViaggiaTreno, scaricate al più una volta per sessione e condivise tra i fornitori. */
+    private var positions: StationPositions? = null
+
+    /**
+     * [stations] con la posizione di ognuna dove è nota. Senza ViaggiaTreno, o se non risponde,
+     * l'elenco resta com'è: la mappa non deve togliere il tabellone.
+     */
+    private suspend fun located(stations: List<Station>): List<Station> {
+        val client = viaggiaTreno ?: return stations
+        val known = positions ?: try {
+            client.stationPositions().also { positions = it }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DebugLog.d(StationCache.TAG) { "Posizioni stazioni non disponibili: ${e.message}" }
+            return stations
+        }
+        return known.locate(stations)
     }
 
     /**
@@ -752,6 +859,8 @@ class LiveBoardState(
         var cancelled = false
         try {
             val board = client.board(station, key.third)
+            // Arrivato mentre si apriva la mappa: è già da buttare.
+            if (showMap) return
             departures = mapper.departures(board)
             notices = board.notices
             if (pausedAt?.let { it.elapsedNow() > STALE_PAUSE } == true) announcements.reset()
@@ -875,10 +984,12 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
         state.station.id,
         state.mode,
         state.restored,
+        state.showMap,
         interval,
         lifecycle
     ) {
-        if (!state.restored) return@LaunchedEffect
+        // Con la mappa aperta il tabellone non si aggiorna; chiudendola riparte subito.
+        if (!state.restored || state.showMap) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             try {
                 // Cambiando intervallo, o tornando in primo piano, si attende solo il resto
@@ -908,7 +1019,17 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
         entryProvider = { route ->
             when (route) {
                 BoardRoute -> NavEntry(route) {
-                    BoardScreen(state, now, charging) { backStack.open(SettingsPage.Main) }
+                    BoardScreen(
+                        state,
+                        now,
+                        charging,
+                        onSettingsClick = { backStack.open(SettingsPage.Main) },
+                        onMapClick = { backStack.open(MapRoute) },
+                    )
+                }
+
+                MapRoute -> NavEntry(route) {
+                    MapScreen(state, onBack = { backStack.pop() })
                 }
 
                 is SettingsPage -> NavEntry(route) {
@@ -931,6 +1052,10 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
 @Serializable
 data object BoardRoute : NavKey
 
+/** La mappa delle stazioni a tutto schermo, sopra il tabellone. */
+@Serializable
+data object MapRoute : NavKey
+
 /**
  * Per salvare il back stack (rotazione, processo chiuso dal sistema) fuori da Android vanno
  * registrate tutte le destinazioni.
@@ -939,6 +1064,7 @@ private val RouteSaving = SavedStateConfiguration {
     serializersModule = SerializersModule {
         polymorphic(NavKey::class) {
             subclass(BoardRoute::class, BoardRoute.serializer())
+            subclass(MapRoute::class, MapRoute.serializer())
             subclass(SettingsPage.Main::class, SettingsPage.Main.serializer())
             subclass(SettingsPage.Audio::class, SettingsPage.Audio.serializer())
             subclass(SettingsPage.Appearance::class, SettingsPage.Appearance.serializer())
@@ -975,13 +1101,14 @@ private fun pageTransition(forward: Boolean): ContentTransform {
 private const val PAGE_MILLIS = 300
 private const val PAGE_SLIDE = 5
 
-/** Il tabellone a tutto schermo; la rotella chiama [onSettingsClick]. */
+/** Il tabellone a tutto schermo; la rotella chiama [onSettingsClick], la cartina [onMapClick]. */
 @Composable
 private fun BoardScreen(
     state: LiveBoardState,
     now: LocalDateTime,
     charging: Boolean?,
     onSettingsClick: () -> Unit,
+    onMapClick: () -> Unit,
 ) {
     val colors = remember(state.oledPalette) {
         if (state.oledPalette) BoardColors.Oled else BoardColors()
@@ -1022,6 +1149,7 @@ private fun BoardScreen(
                 muted = state.muted,
                 onRefreshClick = state::requestRefresh,
                 refreshEnabled = state.canRefreshNow,
+                onMapClick = onMapClick.takeIf { StationMapSupported },
                 modifier = Modifier.fillMaxSize(),
             )
         }

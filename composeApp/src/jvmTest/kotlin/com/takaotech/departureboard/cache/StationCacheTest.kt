@@ -1,5 +1,6 @@
 package com.takaotech.departureboard.cache
 
+import com.takaotech.departureboard.rfi.LatLng
 import com.takaotech.departureboard.rfi.Station
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.TimeZone
@@ -125,5 +126,26 @@ class StationCacheTest {
 
         assertEquals(milano, stations)
         assertEquals(milano, cache().use { it.stations(StationSource.Rfi, fetching(napoli)) })
+    }
+
+    @Test
+    fun `un elenco incompleto si riscarica anche se non è scaduto`() = runBlocking {
+        val located = listOf(Station("1728", "MILANO CENTRALE", LatLng(45.486347, 9.204528)))
+        val hasPositions = { list: List<Station> -> list.any { it.position != null } }
+        cache().use { c ->
+            c.stations(StationSource.Rfi, fetching(milano))
+            assertEquals(located, c.stations(StationSource.Rfi, hasPositions, fetching(located)))
+            assertEquals(located, c.stations(StationSource.Rfi, hasPositions, fetching(milano)))
+        }
+        assertEquals(2, downloads)
+    }
+
+    @Test
+    fun `un elenco incompleto resta il ripiego se il download fallisce`() = runBlocking {
+        cache().use { c ->
+            c.stations(StationSource.Rfi, fetching(milano))
+            val stations = c.stations(StationSource.Rfi, { false }) { error("ViaggiaTreno giù") }
+            assertEquals(milano, stations)
+        }
     }
 }

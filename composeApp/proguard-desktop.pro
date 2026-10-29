@@ -30,3 +30,10 @@
 -dontwarn io.ktor.**
 -dontwarn kotlinx.coroutines.debug.**
 -dontwarn org.graalvm.**
+
+# MapLibre Compose: il motore nativo richiama classi Kotlin con la Foreign Function API, LWJGL
+# carica le sue native per nome.
+-keep class org.maplibre.** { *; }
+-keep class org.lwjgl.** { *; }
+-dontwarn org.maplibre.**
+-dontwarn org.lwjgl.**

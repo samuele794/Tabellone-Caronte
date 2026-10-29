@@ -43,6 +43,7 @@ import com.takaotech.departureboard.tts.DesktopSpeechEngine
 import com.takaotech.departureboard.tts.JvmLoopPlayer
 import com.takaotech.departureboard.tts.JvmPcmPlayer
 import com.takaotech.departureboard.tts.JvmSoundPlayer
+import com.takaotech.departureboard.viaggiatreno.ViaggiaTrenoClient
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
@@ -99,6 +100,7 @@ fun main(args: Array<String>) {
             FnmKeyStore(File(dataDir, "fnm-key.json").absolutePath, fnmClient::webComponentsJs),
         ),
     ).associateBy { it.source }
+    val viaggiaTreno = ViaggiaTrenoClient()
     val announcer = Announcer(DesktopSpeechEngine(), JvmSoundPlayer())
     val flapClatter = FlapClatter(JvmPcmPlayer())
     val backgroundSound = BackgroundSound(JvmLoopPlayer())
@@ -116,6 +118,7 @@ fun main(args: Array<String>) {
                     settingsStore = settingsStore,
                     flapClatter = flapClatter,
                     backgroundSound = backgroundSound,
+                    viaggiaTreno = viaggiaTreno.takeIf { StationMapSupported },
                 )
             }
         val title =
@@ -128,6 +131,7 @@ fun main(args: Array<String>) {
                 stationCache.close()
                 settingsStore.close()
                 sources.values.forEach { it.close() }
+                viaggiaTreno.close()
                 exitApplication()
             },
             title = title,

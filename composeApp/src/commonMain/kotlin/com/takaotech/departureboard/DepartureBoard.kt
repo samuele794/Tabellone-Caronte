@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -55,6 +56,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.min
+import com.takaotech.departureboard.resources.Res
+import com.takaotech.departureboard.resources.map_open
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -264,6 +268,7 @@ private class BoardGeometry(l: BoardLayout) {
  * aggiornamento); con [onSettingsClick] accanto compare una rotella delle impostazioni, con
  * [onMuteClick] un altoparlante per silenziare l'audio (barrato se [muted]) e con
  * [onRefreshClick] un bottone per aggiornare subito, spento finché [refreshEnabled] è falso.
+ * Con [onMapClick] accanto al titolo compare una cartina per aprire la mappa delle stazioni.
  *
  * [style] sceglie come si scrive il testo: LED a matrice di punti o palette Solari, a parità di
  * colonne e misure.
@@ -283,6 +288,7 @@ fun DepartureBoard(
     muted: Boolean = false,
     onRefreshClick: (() -> Unit)? = null,
     refreshEnabled: Boolean = true,
+    onMapClick: (() -> Unit)? = null,
 ) {
     val g = remember(layout) { BoardGeometry(layout) }
     val glyphs = rememberFlapGlyphs()
@@ -304,7 +310,14 @@ fun DepartureBoard(
         ) {
             BoardPanel(
                 departures, footer, labels, layout, g, pitch, colors, status,
-                TitleActions(onSettingsClick, onMuteClick, muted, onRefreshClick, refreshEnabled),
+                TitleActions(
+                    onSettingsClick,
+                    onMuteClick,
+                    muted,
+                    onRefreshClick,
+                    refreshEnabled,
+                    onMapClick
+                ),
                 modifier = if (fill) Modifier.height(maxHeight) else Modifier,
             )
         }
@@ -435,6 +448,7 @@ private class TitleActions(
     val muted: Boolean,
     val onRefreshClick: (() -> Unit)?,
     val refreshEnabled: Boolean,
+    val onMapClick: (() -> Unit)?,
 )
 
 @Composable
@@ -457,6 +471,10 @@ private fun TitleRow(
             Modifier.alignByBaseline(),
             style = labelStyle(p * 8f, FontWeight.Medium, colors.label),
         )
+        actions.onMapClick?.let { onClick ->
+            Spacer(Modifier.width(p * 4))
+            MapButton(onClick, p, colors, Modifier.align(Alignment.CenterVertically))
+        }
         Spacer(Modifier.weight(1f))
         if (status != null) {
             BasicText(
@@ -492,6 +510,62 @@ private fun TitleRow(
             SettingsGear(onClick, p, colors, Modifier.align(Alignment.CenterVertically))
         }
     }
+}
+
+/** Cartina piegata in tre per aprire la mappa delle stazioni, col colore delle etichette. */
+@Composable
+private fun MapButton(
+    onClick: () -> Unit,
+    p: Dp,
+    colors: BoardColors,
+    modifier: Modifier = Modifier
+) {
+    val description = stringResource(Res.string.map_open)
+    Box(
+        modifier
+            .clip(CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .semantics { contentDescription = description }
+            .padding(p * 1.5f),
+    ) {
+        Spacer(
+            Modifier.size(p * 8).drawWithCache {
+                val s = size.minDimension
+                val stroke = Stroke(s * 0.09f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                val map = foldedMapPath(s)
+                onDrawBehind {
+                    drawPath(map, colors.label, style = stroke)
+                    // Pieghe tra i tre pannelli.
+                    drawLine(
+                        colors.label,
+                        Offset(s * 0.36f, s * 0.12f),
+                        Offset(s * 0.36f, s * 0.78f),
+                        stroke.width
+                    )
+                    drawLine(
+                        colors.label,
+                        Offset(s * 0.64f, s * 0.22f),
+                        Offset(s * 0.64f, s * 0.88f),
+                        stroke.width
+                    )
+                }
+            },
+        )
+    }
+}
+
+/** Contorno di una cartina piegata a zig-zag in tre pannelli, in un quadrato di lato [s]. */
+private fun foldedMapPath(s: Float): Path = Path().apply {
+    moveTo(s * 0.08f, s * 0.22f)
+    lineTo(s * 0.36f, s * 0.12f)
+    lineTo(s * 0.64f, s * 0.22f)
+    lineTo(s * 0.92f, s * 0.12f)
+    lineTo(s * 0.92f, s * 0.78f)
+    lineTo(s * 0.64f, s * 0.88f)
+    lineTo(s * 0.36f, s * 0.78f)
+    lineTo(s * 0.08f, s * 0.88f)
+    close()
 }
 
 /**

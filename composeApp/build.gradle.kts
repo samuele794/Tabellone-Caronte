@@ -10,7 +10,8 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(21)
+    // MapLibre Compose sul desktop usa la Foreign Function API e chiede Java 25.
+    jvmToolchain(25)
 
     jvm()
 
@@ -45,6 +46,15 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.datastore.core.okio)
         }
+        // Mappa delle stazioni: MapLibre Compose c'è per Android e desktop, non per wasmJs.
+        val mapMain by creating {
+            dependsOn(commonMain.get())
+            dependencies {
+                implementation(libs.maplibre.compose)
+            }
+        }
+        jvmMain.get().dependsOn(mapMain)
+        androidMain.get().dependsOn(mapMain)
         jvmMain.dependencies {
             // Native Skiko di tutte le piattaforme: il jar desktop è uno solo per Windows, macOS e
             // Linux. Quelle di Nucleus sono già tutte dentro i suoi jar.
@@ -58,9 +68,16 @@ kotlin {
             implementation(libs.nucleus.decorated.window.tao)
             implementation(libs.ktor.client.cio)
             implementation(libs.jlayer)
+            // Motore nativo della mappa: Metal su macOS (solo Apple Silicon), Vulkan altrove.
+            runtimeOnly(libs.maplibre.compose.runtime.metal.macos.arm64)
+            runtimeOnly(libs.maplibre.compose.runtime.vulkan.windows.x64)
+            runtimeOnly(libs.maplibre.compose.runtime.vulkan.windows.arm64)
+            runtimeOnly(libs.maplibre.compose.runtime.vulkan.linux.x64)
+            runtimeOnly(libs.maplibre.compose.runtime.vulkan.linux.arm64)
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
+            runtimeOnly(libs.maplibre.compose.runtime.opengl.android)
         }
         wasmJsMain.dependencies {
             implementation(libs.ktor.client.js)
@@ -82,7 +99,12 @@ compose.resources {
 
 nucleus.application {
     mainClass = "com.takaotech.departureboard.MainKt"
-    jvmArgs("-Dskiko.fps.enabled=true", "-Dskiko.fps.count=200")
+    jvmArgs(
+        "-Dskiko.fps.enabled=true",
+        "-Dskiko.fps.count=200",
+        // MapLibre chiama il motore nativo con la Foreign Function API.
+        "--enable-native-access=ALL-UNNAMED",
+    )
 
     nativeDistributions {
         packageName = "DepartureBoard"

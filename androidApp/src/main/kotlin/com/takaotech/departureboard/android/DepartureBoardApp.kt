@@ -12,6 +12,7 @@ import com.takaotech.departureboard.fnm.FnmKeyStore
 import com.takaotech.departureboard.live.SettingsStore
 import com.takaotech.departureboard.rfi.RfiBoardSource
 import com.takaotech.departureboard.rfi.RfiClient
+import com.takaotech.departureboard.viaggiatreno.ViaggiaTrenoClient
 import com.takaotech.departureboard.watch.TrainTracker
 import java.io.File
 
@@ -47,6 +48,9 @@ class AppServices(app: Application) {
         RfiBoardSource(RfiClient()),
         FnmBoardSource(fnmClient, fnmKeys),
     ).associateBy { it.source }
+
+    /** Posizioni delle stazioni, per la mappa. */
+    val viaggiaTreno = ViaggiaTrenoClient()
 
     /** Fornitori a parte per lo smartwatch: vedi [TrainTracker]. */
     private val trainTracker = TrainTracker(

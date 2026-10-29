@@ -36,8 +36,8 @@ workflow(
     job(id = "build", name = "Test e build", runsOn = UbuntuLatest) {
         uses(name = "Checkout", action = Checkout())
         uses(
-            name = "Java 21",
-            action = SetupJava(distribution = SetupJava.Distribution.Temurin, javaVersion = "21"),
+            name = "Java 25",
+            action = SetupJava(distribution = SetupJava.Distribution.Temurin, javaVersion = "25"),
         )
         uses(name = "Gradle", action = ActionsSetupGradle())
         // I test in uno step a sé: se si rompono lo si vede subito, senza cercarli tra R8 e ProGuard.
