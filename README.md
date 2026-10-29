@@ -37,6 +37,26 @@ visto che un certo Ministro dei Trasporti non è in grado di prendersi [le sue r
 ./gradlew :composeApp:wasmJsBrowserDistribution       # pagina statica in composeApp/build/dist/wasmJs/productionExecutable/
 ```
 
+## Requisiti
+
+Le app già pronte stanno
+nelle [GitHub Release](https://github.com/samuele794/Tabellone-Caronte/releases)
+(vedi [Release e CI](#release-e-ci)).
+
+| App                | Serve                                                                                                                                                      | Come si installa                                                                                     |
+|--------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|
+| Android (telefono) | Android 7.0 (API 24) o successivo, connessione internet                                                                                                    | `Tabellone-<versione>.apk`: aprirlo sul telefono e consentire l'installazione da origini sconosciute |
+| Wear OS            | Wear OS 3 (API 30) o successivo, abbinato a un telefono Android con l'app telefono della **stessa release**; Wi-Fi/LTE solo per aggiornarsi senza telefono | `Tabellone-Wear-<versione>.apk` dal computer con ADB: [guida](docs/Installazione-smartwatch.md)      |
+| Desktop            | Java 25 o successivo; Windows, macOS o Linux, x64 o arm64                                                                                                  | `java -jar DepartureBoard-<versione>.jar`                                                            |
+| Web                | browser con WasmGC (Firefox 120+, Chrome 119+, Safari 18.2+) e un proxy verso RFI e Trenord                                                                | immagine Docker `ghcr.io/samuele794/tabellone-caronte` (`linux/amd64`, `linux/arm64`)                |
+
+L'app watch non funziona da sola: i treni si scelgono sul telefono, e telefono e watch si parlano
+solo se le due app hanno la stessa firma (vedi [Smartwatch](#smartwatch-wear-os)). Non c'è versione
+iOS, e i watch Wear OS non si abbinano a un iPhone.
+
+Per compilare dai sorgenti servono JDK 25 e l'Android SDK con `compileSdk` 37 (solo per le app
+Android e Wear OS; il `Dockerfile` compila la pagina web senza).
+
 ## Build di rilascio
 
 | Target  | Comando                                           | Risultato                                                                   |
@@ -66,7 +86,7 @@ valori la build riesce lo stesso, ma esce `androidApp-release-unsigned.apk`. La 
 (vedi [Pagina web](#pagina-web-wasmjs)).
 
 **Desktop**: un solo jar con ProGuard e le native di tutte le piattaforme, da lanciare con
-`java -jar` (Java 21+); vedi [Desktop (Nucleus)](#desktop-nucleus). La versione è `app-version` in
+`java -jar` (Java 25+); vedi [Desktop (Nucleus)](#desktop-nucleus). La versione è `app-version` in
 `gradle/libs.versions.toml`.
 
 ## Release e CI
@@ -457,6 +477,8 @@ Telefono e watch devono avere lo stesso `applicationId` (`com.takaotech.departur
 firma: `wearApp` legge le stesse credenziali di `signing/credential.properties`. Il `versionCode` del
 watch è quello del telefono più 10000. Per provarlo: un emulatore telefono e uno Wear OS abbinati
 (Device Manager → *Pair Wearable*), poi `./gradlew :androidApp:installDebug :wearApp:installDebug`.
+Su un watch vero l'APK della release si installa via Wi-Fi con ADB: passo passo in
+[docs/Installazione-smartwatch.md](docs/Installazione-smartwatch.md).
 
 ## Desktop (Nucleus)
 
@@ -474,7 +496,7 @@ La distribuzione è un unico jar per Windows, macOS e Linux, x64 e arm64:
 
 ```bash
 ./gradlew :composeApp:packageUniversalJar
-java -jar composeApp/build/dist/DepartureBoard-1.1.0.jar     # serve Java 21 o successivo
+java -jar composeApp/build/dist/DepartureBoard-1.1.0.jar     # serve Java 25 o successivo
 java -jar composeApp/build/dist/DepartureBoard-1.1.0.jar --announce
 ```
 
@@ -523,7 +545,7 @@ docker run --rm -p 8080:8080 departure-board-web     # http://localhost:8080
 Le immagini già pronte stanno su `ghcr.io/samuele794/tabellone-caronte` (vedi
 [Release e CI](#release-e-ci)).
 
-Il `Dockerfile` compila la distribuzione wasmJs con Gradle in un'immagine JDK 21 (l'Android SDK
+Il `Dockerfile` compila la distribuzione wasmJs con Gradle in un'immagine JDK 25 (l'Android SDK
 non serve) e la copia in `nginxinc/nginx-unprivileged`, che ascolta sulla 8080 senza root.
 `docker/nginx.conf` serve i file statici (`application/wasm`, cache lunga per i `.wasm` con
 l'hash nel nome) e inoltra `/rfi/*` e `/trenord/*` come il dev server, con lo User-Agent di un
