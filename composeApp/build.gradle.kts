@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -20,6 +21,9 @@ kotlin {
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
         androidResources { enable = true }
+        // Il toolchain 25 serve solo al desktop: le app Android (e i loro unit test, su JVM 21)
+        // non caricano bytecode Java 25.
+        compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
     }
 
     @OptIn(ExperimentalWasmDsl::class)
