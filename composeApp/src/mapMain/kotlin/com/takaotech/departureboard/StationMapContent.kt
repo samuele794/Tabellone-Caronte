@@ -16,7 +16,10 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.takaotech.departureboard.rfi.LatLng
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.serialization.json.JsonObject
@@ -29,16 +32,22 @@ import org.maplibre.compose.camera.CameraPosition
 import org.maplibre.compose.camera.CameraUpdate
 import org.maplibre.compose.expressions.dsl.all
 import org.maplibre.compose.expressions.dsl.asNumber
+import org.maplibre.compose.expressions.dsl.asString
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.expressions.dsl.eq
 import org.maplibre.compose.expressions.dsl.feature
+import org.maplibre.compose.expressions.dsl.format
 import org.maplibre.compose.expressions.dsl.image
 import org.maplibre.compose.expressions.dsl.interpolate
 import org.maplibre.compose.expressions.dsl.linear
 import org.maplibre.compose.expressions.dsl.neq
+import org.maplibre.compose.expressions.dsl.not
+import org.maplibre.compose.expressions.dsl.span
+import org.maplibre.compose.expressions.dsl.step
 import org.maplibre.compose.expressions.dsl.zoom
 import org.maplibre.compose.interaction.ClickResult
 import org.maplibre.compose.layers.Anchor
+import org.maplibre.compose.layers.CircleLayer
 import org.maplibre.compose.layers.FeaturesClickHandler
 import org.maplibre.compose.layers.LineLayer
 import org.maplibre.compose.layers.SymbolLayer
@@ -49,14 +58,17 @@ import org.maplibre.compose.map.rememberMapState
 import org.maplibre.compose.overlay.MapOverlay
 import org.maplibre.compose.overlay.include
 import org.maplibre.compose.sources.GeoJsonData
+import org.maplibre.compose.sources.GeoJsonSource
 import org.maplibre.compose.sources.VectorSource
 import org.maplibre.compose.sources.getBaseSource
 import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.compose.style.BaseStyle
+import org.maplibre.compose.style.StyleHandleException
 import org.maplibre.compose.util.MaplibreComposable
 import org.maplibre.spatialk.geojson.BoundingBox
 import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.FeatureCollection
+import org.maplibre.spatialk.geojson.Geometry
 import org.maplibre.spatialk.geojson.Point
 import org.maplibre.spatialk.geojson.Position
 import kotlin.time.Duration.Companion.milliseconds
@@ -109,6 +121,28 @@ private val ICON_SIZE = DpSize(24.dp, 24.dp)
 private const val INDEX = "i"
 
 /**
+ * Le stazioni vicine si raccolgono in un cerchio col loro numero, invece di nascondersi a vicenda;
+ * il raggio è in 1/512 di tile, circa i pixel sullo schermo. Da [CLUSTER_MAX_ZOOM] in su si vedono
+ * tutte, anche sovrapposte.
+ */
+private const val CLUSTER_RADIUS = 50
+private const val CLUSTER_MAX_ZOOM = 13
+
+/** Proprietà che MapLibre aggiunge ai cluster: quante stazioni contengono, e lo stesso abbreviato. */
+private const val POINT_COUNT = "point_count"
+private const val POINT_COUNT_SHORT = "point_count_abbreviated"
+
+/** Carattere del numero sui cluster, tra i glifi che lo stile già serve. */
+private val CLUSTER_FONT = listOf("Noto Sans Bold")
+
+/** Toccando un cluster ci si avvicina finché si divide; se MapLibre non lo dice, di tanto. */
+private const val CLUSTER_ZOOM_STEP = 2.0
+private val ZOOM_INTO_CLUSTER = CameraAnimation.Ease { duration = 400.milliseconds }
+
+/** Cluster toccato, con la sorgente che lo ha formato e a cui chiedere come si divide. */
+private class ClusterTap(val source: GeoJsonSource, val cluster: Feature<Geometry, JsonObject?>)
+
+/**
  * Mappa di [StationMap], uguale su Android e desktop; il desktop la avvolge nel suo host GPU e le
  * passa un [runtime] suo, null per quello predefinito.
  */
@@ -139,14 +173,61 @@ internal fun StationMapContent(
         stations.getOrNull(index ?: -1)?.let(onStationClick)
         ClickResult.Consume
     }
+    // I tocchi sui cluster arrivano dentro la mappa; li gestisce chi ne ha lo stato, più sotto.
+    val clusterTaps = remember {
+        MutableSharedFlow<ClusterTap>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST
+        )
+    }
     val content: @Composable @MaplibreComposable () -> Unit = {
         RegionBoundaries()
         // La sorgente tiene i dati con cui nasce: quando arrivano altri elenchi se ne fa una nuova.
         key(features) {
+            val source = rememberGeoJsonSource(GeoJsonData.Features(features)) {
+                cluster = true
+                clusterRadius = CLUSTER_RADIUS
+                clusterMaxZoom = CLUSTER_MAX_ZOOM
+            }
+            val isCluster = feature.has(POINT_COUNT)
+            CircleLayer(
+                id = "stazioni-gruppi",
+                source = source,
+                filter = isCluster,
+                color = const(STATION_COLOR),
+                radius = step(
+                    feature[POINT_COUNT].asNumber(),
+                    const(14.dp),
+                    10 to const(17.dp),
+                    100 to const(21.dp),
+                    1000 to const(25.dp),
+                ),
+                strokeColor = const(Color.White),
+                strokeWidth = const(2.dp),
+                onClick = { clusters ->
+                    clusters.firstOrNull()?.let { clusterTaps.tryEmit(ClusterTap(source, it)) }
+                    ClickResult.Consume
+                },
+            )
+            SymbolLayer(
+                id = "stazioni-gruppi-numero",
+                source = source,
+                filter = isCluster,
+                textField = format(span(feature[POINT_COUNT_SHORT].asString())),
+                textFont = const(CLUSTER_FONT),
+                textSize = const(12.sp),
+                textColor = const(Color.White),
+                textAllowOverlap = const(true),
+                textIgnorePlacement = const(true),
+            )
+            // Fuori dai cluster nessuna stazione si nasconde, anche se tocca la vicina.
             SymbolLayer(
                 id = "stazioni",
-                source = rememberGeoJsonSource(GeoJsonData.Features(features)),
+                source = source,
+                filter = !isCluster,
                 iconImage = image(stationIcon, ICON_SIZE),
+                iconAllowOverlap = const(true),
+                iconIgnorePlacement = const(true),
                 onClick = onClick,
                 hitPadding = 4.dp,
             )
@@ -173,6 +254,18 @@ internal fun StationMapContent(
     LaunchedEffect(state) {
         snapshotFlow { state.cameraPosition }.collect {
             cameraChanged(MapCamera(it.center.toLatLng(), it.zoom, it.bearing, it.pitch))
+        }
+    }
+    // Cluster toccato: ci si avvicina fino a dove si divide.
+    LaunchedEffect(state) {
+        clusterTaps.collect { tap ->
+            val center = (tap.cluster.geometry as? Point)?.coordinates ?: return@collect
+            val zoom = try {
+                state.style.sources[tap.source]?.getClusterExpansionZoom(tap.cluster)
+            } catch (_: StyleHandleException) {
+                null
+            } ?: (state.cameraPosition.zoom + CLUSTER_ZOOM_STEP)
+            state.animateCamera(CameraUpdate(center = center, zoom = zoom), ZOOM_INTO_CLUSTER)
         }
     }
     // Stazione scelta dalla ricerca: la mappa ci vola sopra.
