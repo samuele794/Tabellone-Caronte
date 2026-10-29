@@ -1,21 +1,12 @@
 package com.takaotech.departureboard
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType
@@ -25,17 +16,14 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import com.takaotech.departureboard.live.Close
-import com.takaotech.departureboard.live.label
-import com.takaotech.departureboard.resources.Res
-import com.takaotech.departureboard.resources.map_tooltip_close
 import com.takaotech.departureboard.rfi.LatLng
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import org.jetbrains.compose.resources.stringResource
 import org.maplibre.compose.camera.CameraAnimation
 import org.maplibre.compose.camera.CameraPosition
 import org.maplibre.compose.camera.CameraUpdate
@@ -128,19 +116,27 @@ private const val INDEX = "i"
 internal fun StationMapContent(
     stations: List<MapStation>,
     selected: LatLng?,
-    tooltip: MapStation?,
-    onTooltipChange: (MapStation?) -> Unit,
+    camera: MapCamera?,
+    onCameraChange: (MapCamera) -> Unit,
+    onStationClick: (MapStation) -> Unit,
     focus: MapFocus?,
     modifier: Modifier,
     runtime: MapRuntime? = null,
 ) {
-    val camera =
-        selected?.let { CameraPosition(center = it.toPosition(), zoom = STATION_ZOOM) } ?: ITALY
+    fun stationCamera(position: LatLng) =
+        CameraPosition(center = position.toPosition(), zoom = STATION_ZOOM)
+
+    // Solo all'apertura: poi la camera è della mappa.
+    val initialCamera = remember {
+        camera?.let {
+            CameraPosition(it.center.toPosition(), it.zoom, bearing = it.bearing, pitch = it.tilt)
+        } ?: selected?.let(::stationCamera) ?: ITALY
+    }
     val stationIcon = rememberVectorPainter(stationIcon(STATION_COLOR))
     val features = remember(stations) { stations.toFeatures() }
     val onClick: FeaturesClickHandler = { features ->
         val index = features.firstOrNull()?.properties?.get(INDEX)?.jsonPrimitive?.intOrNull
-        stations.getOrNull(index ?: -1)?.let(onTooltipChange)
+        stations.getOrNull(index ?: -1)?.let(onStationClick)
         ClickResult.Consume
     }
     val content: @Composable @MaplibreComposable () -> Unit = {
@@ -158,12 +154,27 @@ internal fun StationMapContent(
     }
     val baseStyle = BaseStyle.Uri(STYLE_URL)
     val state = if (runtime != null) {
-        rememberMapState(runtime, baseStyle, camera, content)
+        rememberMapState(runtime, baseStyle, initialCamera, content)
     } else {
-        rememberMapState(baseStyle = baseStyle, initialCameraPosition = camera, content = content)
+        rememberMapState(
+            baseStyle = baseStyle,
+            initialCameraPosition = initialCamera,
+            content = content
+        )
     }
-    // Cambiando stazione con la mappa aperta, la camera la segue.
-    LaunchedEffect(state, camera) { state.setCameraPosition(camera) }
+    val currentSelected by rememberUpdatedState(selected)
+    val cameraChanged by rememberUpdatedState(onCameraChange)
+    // Se la posizione della stazione del tabellone arriva, o cambia, con la mappa aperta, la
+    // camera la segue; quella che c'era all'apertura no, o annullerebbe la camera ripresa.
+    LaunchedEffect(state) {
+        snapshotFlow { currentSelected }.drop(1).filterNotNull()
+            .collect { state.setCameraPosition(stationCamera(it)) }
+    }
+    LaunchedEffect(state) {
+        snapshotFlow { state.cameraPosition }.collect {
+            cameraChanged(MapCamera(it.center.toLatLng(), it.zoom, it.bearing, it.pitch))
+        }
+    }
     // Stazione scelta dalla ricerca: la mappa ci vola sopra.
     LaunchedEffect(state, focus) {
         val station = focus?.station ?: return@LaunchedEffect
@@ -179,15 +190,6 @@ internal fun StationMapContent(
         overlay = {
             // Senza scala e bussola in alto: lì c'è il bottone per tornare al tabellone.
             include(MapOverlay.AttributionOnly)
-            tooltip?.let { station ->
-                StationTooltip(
-                    station,
-                    onClose = { onTooltipChange(null) },
-                    modifier = Modifier
-                        .placedAt(station.position.toPosition(), Alignment.BottomCenter)
-                        .padding(bottom = 20.dp),
-                )
-            }
         },
     )
 }
@@ -227,39 +229,9 @@ private fun RegionBoundaries() {
     }
 }
 
-/**
- * Scheda della stazione toccata, sopra il suo segnaposto; la X la chiude.
- *
- * TODO: grafica definitiva della scheda stazione. Per ora è un tooltip provvisorio con nome e
- *  fornitori.
- */
-@Composable
-private fun StationTooltip(
-    station: MapStation,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier.widthIn(max = 280.dp),
-        shape = RoundedCornerShape(8.dp),
-        shadowElevation = 4.dp,
-    ) {
-        Box {
-            Column(Modifier.padding(start = 12.dp, top = 10.dp, end = 40.dp, bottom = 10.dp)) {
-                Text(station.name, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    station.sources.joinToString(" · ") { it.label },
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).size(36.dp)) {
-                Icon(Close, stringResource(Res.string.map_tooltip_close), Modifier.size(18.dp))
-            }
-        }
-    }
-}
-
 private fun LatLng.toPosition() = Position(longitude = lon, latitude = lat)
+
+private fun Position.toLatLng() = LatLng(lat = latitude, lon = longitude)
 
 /** Le stazioni come punti GeoJSON, ognuna con il suo indice in questa lista. */
 private fun List<MapStation>.toFeatures(): FeatureCollection<Point, JsonObject> =

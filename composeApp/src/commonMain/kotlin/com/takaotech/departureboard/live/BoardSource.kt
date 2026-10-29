@@ -22,10 +22,10 @@ interface BoardSource : AutoCloseable {
     suspend fun board(station: Station, mode: BoardMode): RfiBoard
 
     /**
-     * Quando verrà riscaricato l'elenco dei treni della stazione, per i fornitori che lo
+     * Quando verrà riscaricato l'elenco dei treni di [station], per i fornitori che lo
      * aggiornano più di rado dei dettagli; null se si scarica tutto a ogni aggiornamento.
      */
-    val nextListRefreshAt: TimeSource.Monotonic.ValueTimeMark? get() = null
+    fun nextListRefreshAt(station: Station): TimeSource.Monotonic.ValueTimeMark? = null
 
     /**
      * Ogni quanto riscaricare l'elenco dei treni, per i fornitori che lo fanno più di rado dei

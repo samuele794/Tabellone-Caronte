@@ -1,10 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Tabellone -->
+    <string name="board_departures">Partenze</string>
+    <string name="board_arrivals">Arrivi</string>
+
     <!-- Mappa delle stazioni -->
     <string name="map_open">Mostra la mappa</string>
-    <string name="map_back_to_board">Tabellone</string>
+    <string name="map_back_to_board">Torna al tabellone</string>
+    <string name="map_open_board">Apri il tabellone</string>
+    <string name="map_window_fullscreen">Tutto schermo</string>
+    <string name="map_window_restore">Riduci la finestra</string>
     <string name="map_tooltip_close">Chiudi</string>
     <string name="map_search_placeholder">Cerca stazione</string>
     <string name="map_search_clear">Cancella ricerca</string>
     <string name="map_search_no_results">Nessuna stazione trovata</string>
+    <string name="map_windows_limit">Puoi aprire al massimo %1$d finestre: chiudine una per aprirne un'altra</string>
 </resources>

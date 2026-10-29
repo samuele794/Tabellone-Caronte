@@ -44,10 +44,11 @@ import com.takaotech.departureboard.Departure
 import com.takaotech.departureboard.DepartureBoard
 import com.takaotech.departureboard.FlapClatter
 import com.takaotech.departureboard.LocalFlapClatter
+import com.takaotech.departureboard.MapCamera
 import com.takaotech.departureboard.MapStation
 import com.takaotech.departureboard.StationMapSupported
+import com.takaotech.departureboard.announce.Announcement
 import com.takaotech.departureboard.announce.Announcer
-import com.takaotech.departureboard.announce.BoardAnnouncements
 import com.takaotech.departureboard.announce.PlaceNames
 import com.takaotech.departureboard.cache.StationCache
 import com.takaotech.departureboard.cache.StationSource
@@ -63,12 +64,10 @@ import com.takaotech.departureboard.watch.WatchSelection
 import com.takaotech.departureboard.watch.WatchSync
 import com.takaotech.departureboard.watch.WatchedTrain
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
@@ -116,8 +115,26 @@ class LiveBoardState(
     /** Posizioni delle stazioni; null = la piattaforma non mostra la mappa. */
     private val viaggiaTreno: ViaggiaTrenoClient? = null,
 ) {
-    private val mapper = RfiMapper()
-    private val announcements = BoardAnnouncements()
+    /** Gli annunci del tabellone, se la piattaforma li ha: tacciono se spenti o silenziati. */
+    private val voice = announcer?.let { announcer ->
+        object : BoardVoice {
+            override fun announce(news: List<Announcement>): Boolean {
+                if (announce && !soundsHeld) {
+                    announcer.enqueue(news)
+                    return true
+                }
+                DebugLog.d(Announcer.TAG) {
+                    "Annunci ${if (soundsHeld) "silenziati" else "spenti"}: scartati ${news.joinToString { it.code }}"
+                }
+                return false
+            }
+
+            override fun clear() = announcer.clear()
+        }
+    }
+
+    /** Dati e aggiornamento del tabellone a tutto schermo. */
+    val feed = BoardFeed(sources, { BoardTarget(source, station, mode) }, { announceBlink }, voice)
 
     /** Fornitori disponibili, nell'ordine delle schede del dialogo stazione. */
     val availableSources: List<StationSource> = StationSource.entries.filter { it in sources }
@@ -148,25 +165,62 @@ class LiveBoardState(
     val mapStations: List<MapStation> by derivedStateOf {
         availableSources
             .flatMap { source ->
-                stations(source).mapNotNull { s ->
-                    s.position?.let {
-                        Triple(
-                            it,
-                            s.name,
-                            source
-                        )
-                    }
-                }
+                stations(source).mapNotNull { s -> s.position?.let { Triple(it, source, s) } }
             }
             .groupBy { it.first }
             .map { (position, entries) ->
                 MapStation(
-                    entries.first().second,
+                    entries.first().third.name,
                     position,
-                    entries.map { it.third }.distinct()
+                    entries.distinctBy { it.second }.associate { it.second to it.third },
                 )
             }
     }
+
+    /**
+     * Finestra di [station] sulla mappa, col tabellone del primo dei suoi fornitori: si aggiorna
+     * come quello a tutto schermo, ma senza annunci. [slot] la sposta nella cascata delle finestre.
+     */
+    fun mapBoard(station: MapStation, slot: Int = 0): MapBoard {
+        val (source, boardStation) = station.stations.entries.first()
+        return MapBoard(station, source, boardStation, sources, { announceBlink }, slot)
+    }
+
+    /**
+     * Finestre dei tabelloni aperte sulla mappa, l'ultima sopra le altre. Stanno qui e non nella
+     * schermata, così una rotazione le ritrova con i loro dati; si chiudono uscendo dalla mappa.
+     */
+    var mapBoards by mutableStateOf<List<MapBoard>>(emptyList())
+        private set
+
+    /**
+     * Apre la finestra di [station], o porta sopra le altre quella già aperta. Con già
+     * [MAX_MAP_BOARDS] finestre non chiude nulla e restituisce false.
+     */
+    fun openMapBoard(station: MapStation): Boolean {
+        val board = mapBoards.firstOrNull { it.station == station } ?: run {
+            if (mapBoards.size >= MAX_MAP_BOARDS) return false
+            mapBoard(station, slot = mapBoards.size)
+        }
+        if (mapBoards.lastOrNull() != board) mapBoards = mapBoards - board + board
+        return true
+    }
+
+    fun closeMapBoard(board: MapBoard) {
+        mapBoards -= board
+    }
+
+    /**
+     * Il tabellone a tutto schermo passa alla stazione e alla modalità di [board], come
+     * scegliendole nelle impostazioni; poi va chiusa la mappa.
+     */
+    fun showOnBoard(board: MapBoard) {
+        select(board.source, board.boardStation)
+        mode = board.mode
+    }
+
+    /** Inquadratura della mappa aperta, per ritrovarla dopo una rotazione. */
+    var mapCamera: MapCamera? = null
 
     /**
      * Si apre la mappa: gli aggiornamenti si fermano e i dati del tabellone si buttano, perché al
@@ -174,23 +228,21 @@ class LiveBoardState(
      * così le variazioni accumulate nel frattempo non si annunciano in blocco.
      */
     fun openMap() {
+        // Già aperta: la schermata è stata solo ricomposta (rotazione), si tiene tutto.
+        if (showMap) return
         showMap = true
-        departures = emptyList()
-        notices = emptyList()
-        updatedAt = null
-        error = null
-        loadedKey = null
-        lastRefresh = null
-        nextRefreshAt = null
-        nextListRefreshAt = null
-        announcer?.clear()
-        announcements.reset()
+        feed.clear()
         sources.values.forEach { it.invalidateList() }
     }
 
-    /** Si torna al tabellone, che riparte subito con un aggiornamento. */
+    /**
+     * Si torna al tabellone, che riparte subito con un aggiornamento. Finestre e inquadratura
+     * della mappa si dimenticano.
+     */
     fun closeMap() {
         showMap = false
+        mapBoards = emptyList()
+        mapCamera = null
     }
 
     /**
@@ -309,8 +361,7 @@ class LiveBoardState(
             sources.getValue(source).listRefresh = interval
         }
         // Il conto alla rovescia dell'elenco si sposta subito, senza aspettare il prossimo giro.
-        if (nextListRefreshAt != null) nextListRefreshAt =
-            sources.getValue(source).nextListRefreshAt
+        feed.listRefreshChanged()
     }
 
     /** Cambia fornitore e stazione insieme. */
@@ -577,15 +628,6 @@ class LiveBoardState(
         }
     }
 
-    /** Lampeggi in corso per numero di treno: più lampeggi dello stesso treno si accavallano. */
-    private var blinkCounts by mutableStateOf<Map<String, Int>>(emptyMap())
-
-    /** Numeri dei treni annunciati la cui riga lampeggia in questo momento. */
-    val blinkingTrains: Set<String> get() = blinkCounts.keys
-
-    /** Treni da far lampeggiare, raccolti da [blinkAnnouncedRows]. */
-    private val blinkRequests = Channel<List<String>>(Channel.UNLIMITED)
-
     /**
      * Fa lampeggiare per [announceBlink] la riga di ogni annuncio: quando comincia a sentirsi
      * (col jingle) o, se gli annunci sonori sono spenti, appena il tabellone mostra la
@@ -593,35 +635,16 @@ class LiveBoardState(
      */
     suspend fun blinkAnnouncedRows(): Unit = coroutineScope {
         announcer?.let { announcer ->
-            launch {
-                announcer.started.collect { blinkRequests.trySend(listOf(it.train.number)) }
-            }
+            launch { announcer.started.collect { feed.blink(listOf(it.train.number)) } }
         }
-        try {
-            for (numbers in blinkRequests) {
-                val duration = announceBlink
-                numbers.forEach { number -> launch { blink(number, duration) } }
-            }
-        } finally {
-            blinkCounts = emptyMap()
-        }
+        feed.runBlinks()
     }
 
-    private suspend fun blink(number: String, duration: Duration) {
-        blinkCounts += number to (blinkCounts[number] ?: 0) + 1
-        try {
-            delay(duration)
-        } finally {
-            val left = (blinkCounts[number] ?: 1) - 1
-            blinkCounts = if (left > 0) blinkCounts + (number to left) else blinkCounts - number
-        }
-    }
+    /** Numeri dei treni annunciati la cui riga lampeggia in questo momento. */
+    val blinkingTrains: Set<String> get() = feed.blinkingTrains
 
-    /** [departures] con le righe dei treni annunciati ([blinkingTrains]) che lampeggiano. */
-    val boardDepartures: List<Departure>
-        get() = blinkingTrains.takeIf { it.isNotEmpty() }?.let { numbers ->
-            departures.map { if (it.number in numbers) it.copy(blink = true) else it }
-        } ?: departures
+    /** Le righe del tabellone, con quelle dei treni annunciati che lampeggiano. */
+    val boardDepartures: List<Departure> get() = feed.boardDepartures
 
     /** Se il tabellone ha un motore per il suono delle palette. */
     val canFlapSound get() = flapClatter != null
@@ -712,81 +735,28 @@ class LiveBoardState(
     /** Se il tabellone ha un motore per gli annunci sonori. */
     val canAnnounce get() = announcer != null
 
-    var departures by mutableStateOf<List<Departure>>(emptyList())
-        private set
-    var notices by mutableStateOf<List<String>>(emptyList())
-        private set
-    var updatedAt by mutableStateOf<LocalDateTime?>(null)
-        private set
-    var loading by mutableStateOf(false)
-        private set
-    var error by mutableStateOf<String?>(null)
-        private set
-
-    /** Prossimo riscaricamento dell'elenco treni, per i fornitori che lo fanno più di rado. */
-    var nextListRefreshAt by mutableStateOf<TimeSource.Monotonic.ValueTimeMark?>(null)
-        private set
-
-    /** Stazione e modalità a cui si riferiscono [departures]. */
-    private var loadedKey: Triple<StationSource, String, BoardMode>? = null
-
-    /** Fine dell'ultimo tentativo di aggiornamento, riuscito o no. */
-    private var lastRefresh: TimeSource.Monotonic.ValueTimeMark? = null
-
-    /** Quando partirà il prossimo aggiornamento; null finché non è in programma. */
-    var nextRefreshAt by mutableStateOf<TimeSource.Monotonic.ValueTimeMark?>(null)
-        private set
-
-    /** Aggiornamenti chiesti a mano, in attesa che [waitForRefresh] li raccolga. */
-    private val refreshRequests = Channel<Unit>(Channel.CONFLATED)
+    val departures: List<Departure> get() = feed.departures
+    val notices: List<String> get() = feed.notices
+    val updatedAt: LocalDateTime? get() = feed.updatedAt
+    val loading: Boolean get() = feed.loading
+    val error: String? get() = feed.error
 
     /** Si può chiedere un aggiornamento a mano: impostazioni ripristinate e nessun download in corso. */
-    val canRefreshNow get() = restored && !loading
+    val canRefreshNow get() = restored && feed.canRefreshNow
 
-    /** Il prossimo [refresh] è chiesto a mano: riscarica anche l'elenco dei treni. */
-    private var manualRefresh = false
-
-    /**
-     * Aggiorna subito, elenco dei treni compreso: [waitForRefresh] smette di attendere e il conto
-     * alla rovescia riparte.
-     */
+    /** Aggiorna subito, elenco dei treni compreso: vedi [BoardFeed.requestRefresh]. */
     fun requestRefresh() {
-        if (!canRefreshNow) return
-        manualRefresh = true
-        refreshRequests.trySend(Unit)
+        if (canRefreshNow) feed.requestRefresh()
     }
 
-    /**
-     * Attende [after] prima del prossimo aggiornamento, rendendolo visibile in [nextRefreshAt];
-     * finisce prima se nel frattempo arriva [requestRefresh].
-     */
-    suspend fun waitForRefresh(after: Duration) {
-        nextRefreshAt = TimeSource.Monotonic.markNow() + after
-        withTimeoutOrNull(after) { refreshRequests.receive() }
-    }
+    suspend fun waitForRefresh(after: Duration) = feed.waitForRefresh(after)
 
-    /**
-     * Attesa prima del prossimo aggiornamento: zero se i dati sono di un'altra tabella, altrimenti
-     * il resto di [interval]. Serve quando il tabellone torna a schermo (es. dopo una rotazione).
-     */
-    fun nextRefreshIn(interval: Duration): Duration {
-        val last = lastRefresh ?: return Duration.ZERO
-        if (loadedKey != Triple(source, station.id, mode)) return Duration.ZERO
-        return (interval - last.elapsedNow()).coerceAtLeast(Duration.ZERO)
-    }
+    fun nextRefreshIn(interval: Duration): Duration = feed.nextRefreshIn(interval)
 
-    /** Da quando il tabellone non è visibile; null se lo è. */
-    private var pausedAt: TimeSource.Monotonic.ValueTimeMark? = null
+    /** Il tabellone non è più visibile: vedi [BoardFeed.pause]. */
+    fun pause() = feed.pause()
 
-    /**
-     * Il tabellone non è più visibile: si zittisce l'annuncio in corso. Se la pausa dura più di
-     * [STALE_PAUSE], il primo tabellone al ritorno fa solo da base, così le variazioni accumulate
-     * nel frattempo non si annunciano in blocco (una rotazione invece non perde nulla).
-     */
-    fun pause() {
-        announcer?.clear()
-        pausedAt = TimeSource.Monotonic.markNow()
-    }
+    suspend fun refresh() = feed.refresh()
 
     suspend fun loadStations(source: StationSource = this.source) {
         stationErrors -= source
@@ -838,63 +808,10 @@ class LiveBoardState(
         }
     }
 
-    /** Scarica il tabellone; se fallisce tiene gli ultimi dati validi della stessa tabella. */
-    suspend fun refresh() {
-        val key = Triple(source, station.id, mode)
-        val client = sources.getValue(key.first)
-        if (key != loadedKey) {
-            departures = emptyList()
-            notices = emptyList()
-            nextListRefreshAt = null
-            // Gli annunci della stazione precedente non servono più.
-            announcer?.clear()
-        }
-        loading = true
-        // Una richiesta arrivata mentre l'attesa era già finita la soddisfa questo aggiornamento.
-        refreshRequests.tryReceive()
-        if (manualRefresh) {
-            manualRefresh = false
-            client.invalidateList()
-        }
-        var cancelled = false
-        try {
-            val board = client.board(station, key.third)
-            // Arrivato mentre si apriva la mappa: è già da buttare.
-            if (showMap) return
-            departures = mapper.departures(board)
-            notices = board.notices
-            if (pausedAt?.let { it.elapsedNow() > STALE_PAUSE } == true) announcements.reset()
-            pausedAt = null
-            // Il primo tabellone di una stazione fa solo da base: update() non annuncia nulla.
-            val news = announcements.update(key.second, key.third, board)
-            when {
-                news.isEmpty() -> Unit
-                announce && !soundsHeld && announcer != null -> announcer.enqueue(news)
-                else -> {
-                    DebugLog.d(Announcer.TAG) {
-                        "Annunci ${if (soundsHeld) "silenziati" else "spenti"}: scartati ${news.joinToString { it.code }}"
-                    }
-                    // Senza voce le righe lampeggiano subito, tutte insieme.
-                    blinkRequests.trySend(news.map { it.train.number }.distinct())
-                }
-            }
-            loadedKey = key
-            updatedAt = localNow()
-            error = null
-        } catch (e: CancellationException) {
-            cancelled = true
-            throw e
-        } catch (e: Exception) {
-            error = "Aggiornamento non riuscito: ${e.message ?: e::class.simpleName}"
-        } finally {
-            loading = false
-            // Un aggiornamento interrotto (es. intervallo cambiato) non rimanda il prossimo.
-            if (!cancelled) lastRefresh = TimeSource.Monotonic.markNow()
-            nextListRefreshAt = client.nextListRefreshAt
-        }
-    }
-
     companion object {
+        /** Finestre dei tabelloni aperte insieme sulla mappa. */
+        const val MAX_MAP_BOARDS = 3
+
         /** Volume degli annunci se non se ne è scelto un altro, in percentuale. */
         const val DEFAULT_ANNOUNCE_VOLUME = 100
 
@@ -912,9 +829,6 @@ class LiveBoardState(
 
         /** Durate del lampeggio della riga del treno annunciato tra cui scegliere. */
         val ANNOUNCE_BLINK_OPTIONS = (10..30).map { it.seconds }
-
-        /** Pausa oltre la quale gli annunci ripartono da una nuova base. */
-        val STALE_PAUSE = 1.minutes
 
         /** Intervallo di aggiornamento se non se ne è scelto un altro. */
         val DEFAULT_REFRESH = 30.seconds
@@ -971,7 +885,6 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
     LaunchedEffect(state.source, state.restored) {
         if (state.restored && state.stations(state.source).isEmpty()) state.loadStations()
     }
-    val interval = state.refreshInterval()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(state.background, state.soundsHeld, state.restored, lifecycle) {
         val sound = state.backgroundSound
@@ -979,34 +892,20 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
         // Come gli aggiornamenti, il sottofondo tace mentre l'app non è visibile; di notte tace comunque.
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { sound.playOutsideQuietHours() }
     }
-    LaunchedEffect(
-        state.source,
-        state.station.id,
-        state.mode,
-        state.restored,
-        state.showMap,
-        interval,
-        lifecycle
-    ) {
-        // Con la mappa aperta il tabellone non si aggiorna; chiudendola riparte subito.
-        if (!state.restored || state.showMap) return@LaunchedEffect
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            try {
-                // Cambiando intervallo, o tornando in primo piano, si attende solo il resto
-                // dall'ultimo aggiornamento (niente, se è già passato).
-                state.waitForRefresh(state.nextRefreshIn(interval))
-                while (isActive) {
-                    state.refresh()
-                    state.waitForRefresh(interval)
-                }
-            } finally {
-                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) state.pause()
-            }
-        }
-    }
+    // Con la mappa aperta il tabellone non si aggiorna; chiudendola riparte subito.
+    AutoRefresh(
+        state.feed,
+        state.refreshInterval(),
+        target = Triple(state.source, state.station.id, state.mode),
+        enabled = state.restored && !state.showMap,
+    )
     // Il tabellone è la radice e le pagine delle impostazioni gli si impilano sopra. Gli effetti
     // qui sopra restano attivi anche a impostazioni aperte: aggiornamenti e annunci continuano.
     val backStack = rememberNavBackStack(RouteSaving, BoardRoute)
+    // La mappa è aperta finché sta nel back stack, che si salva: una rotazione la ricompone
+    // senza chiuderla, e le sue finestre restano.
+    val mapOpen = MapRoute in backStack
+    LaunchedEffect(mapOpen) { if (mapOpen) state.openMap() else state.closeMap() }
     NavDisplay(
         backStack = backStack,
         // Mentre le pagine sfumano si vede cosa c'è sotto: lo sfondo del tema, non quello chiaro
@@ -1029,7 +928,14 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
                 }
 
                 MapRoute -> NavEntry(route) {
-                    MapScreen(state, onBack = { backStack.pop() })
+                    MapScreen(
+                        state,
+                        onBack = { backStack.pop() },
+                        onOpenBoard = { board ->
+                            state.showOnBoard(board)
+                            backStack.pop()
+                        },
+                    )
                 }
 
                 is SettingsPage -> NavEntry(route) {
@@ -1101,6 +1007,30 @@ private fun pageTransition(forward: Boolean): ContentTransform {
 private const val PAGE_MILLIS = 300
 private const val PAGE_SLIDE = 5
 
+/**
+ * Aggiorna [feed] ogni [interval] mentre l'app è visibile (almeno [Lifecycle.State.STARTED]) ed
+ * [enabled]; quando cambia [target] riparte subito con un aggiornamento. Cambiando intervallo, o
+ * tornando in primo piano, si attende solo il resto dall'ultimo aggiornamento.
+ */
+@Composable
+internal fun AutoRefresh(feed: BoardFeed, interval: Duration, target: Any, enabled: Boolean) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(feed, target, enabled, interval, lifecycle) {
+        if (!enabled) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            try {
+                feed.waitForRefresh(feed.nextRefreshIn(interval))
+                while (isActive) {
+                    feed.refresh()
+                    feed.waitForRefresh(interval)
+                }
+            } finally {
+                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) feed.pause()
+            }
+        }
+    }
+}
+
 /** Il tabellone a tutto schermo; la rotella chiama [onSettingsClick], la cartina [onMapClick]. */
 @Composable
 private fun BoardScreen(
@@ -1110,43 +1040,22 @@ private fun BoardScreen(
     onSettingsClick: () -> Unit,
     onMapClick: () -> Unit,
 ) {
-    val colors = remember(state.oledPalette) {
-        if (state.oledPalette) BoardColors.Oled else BoardColors()
-    }
     val screenOn = !state.screenOnOnlyWhenCharging || charging != false
     val clatter = state.flapClatter.takeIf {
         state.boardStyle == BoardStyle.SplitFlap && state.flapSound && !state.soundsHeld
     }
     Box(
-        Modifier.fillMaxSize().background(colors.frame).safeDrawingPadding()
+        Modifier.fillMaxSize().background(rememberBoardColors(state).frame).safeDrawingPadding()
             .then(if (screenOn) Modifier.keepScreenOn() else Modifier)
     ) {
         CompositionLocalProvider(LocalFlapClatter provides clatter) {
-            DepartureBoard(
-                departures = state.boardDepartures,
+            LiveDepartureBoard(
+                state,
+                state.feed,
+                state.mode,
                 footer = boardFooter(now, state.notices, state.station.name),
-                labels = if (state.mode == BoardMode.Arrivals) BoardLabels.Arrivals else BoardLabels(),
-                layout = BoardLayout(
-                    rows = null,
-                    autoScroll = state.autoScroll,
-                    logoCols = RfiMapper.LOGO_COLS,
-                    logoDensity = RfiMapper.LOGO_DENSITY,
-                    ledStepMillis = if (state.ecoMode) ECO_LED_STEP_MILLIS else 100,
-                    marqueeColsPerSecond = if (state.ecoMode) ECO_MARQUEE_COLS_PER_SECOND else 10f,
-                    blinkingColon = !state.ecoMode,
-                    flapPageMillis = state.flapPagePause.inWholeMilliseconds *
-                            if (state.ecoMode) ECO_FLAP_PAGE_FACTOR else 1,
-                ),
-                colors = colors,
-                style = state.boardStyle,
-                status = statusLabel(
-                    state,
-                    secondsLeft = secondsToRefresh(state.nextRefreshAt),
-                    listSecondsLeft = secondsToRefresh(state.nextListRefreshAt),
-                ),
                 onSettingsClick = onSettingsClick,
                 onMuteClick = if (state.canMute) ({ state.muted = !state.muted }) else null,
-                muted = state.muted,
                 onRefreshClick = state::requestRefresh,
                 refreshEnabled = state.canRefreshNow,
                 onMapClick = onMapClick.takeIf { StationMapSupported },
@@ -1154,6 +1063,64 @@ private fun BoardScreen(
             )
         }
     }
+}
+
+/** Colori del tabellone scelti nelle impostazioni. */
+@Composable
+private fun rememberBoardColors(state: LiveBoardState): BoardColors =
+    remember(state.oledPalette) { if (state.oledPalette) BoardColors.Oled else BoardColors() }
+
+/**
+ * Il tabellone di [feed] in [mode], con l'aspetto scelto nelle impostazioni di [state]: lo stesso
+ * a tutto schermo e nelle schede della mappa, che ne spengono dei pezzi. Con [rows] mostra al più
+ * quelle righe, ferme (con [fitHeight] rimpicciolite fino a entrare in altezza); senza [footer] non ha orologio né avvisi; i bottoni null non compaiono.
+ */
+@Composable
+internal fun LiveDepartureBoard(
+    state: LiveBoardState,
+    feed: BoardFeed,
+    mode: BoardMode,
+    modifier: Modifier = Modifier,
+    rows: Int? = null,
+    fitHeight: Boolean = false,
+    footer: BoardFooter? = null,
+    onSettingsClick: (() -> Unit)? = null,
+    onMuteClick: (() -> Unit)? = null,
+    onRefreshClick: () -> Unit = feed::requestRefresh,
+    refreshEnabled: Boolean = feed.canRefreshNow,
+    onMapClick: (() -> Unit)? = null,
+) {
+    DepartureBoard(
+        departures = feed.boardDepartures.let { if (rows != null) it.take(rows) else it },
+        footer = footer,
+        labels = if (mode == BoardMode.Arrivals) BoardLabels.Arrivals else BoardLabels(),
+        layout = BoardLayout(
+            rows = rows,
+            fitHeight = fitHeight,
+            autoScroll = state.autoScroll,
+            logoCols = RfiMapper.LOGO_COLS,
+            logoDensity = RfiMapper.LOGO_DENSITY,
+            ledStepMillis = if (state.ecoMode) ECO_LED_STEP_MILLIS else 100,
+            marqueeColsPerSecond = if (state.ecoMode) ECO_MARQUEE_COLS_PER_SECOND else 10f,
+            blinkingColon = !state.ecoMode,
+            flapPageMillis = state.flapPagePause.inWholeMilliseconds *
+                    if (state.ecoMode) ECO_FLAP_PAGE_FACTOR else 1,
+        ),
+        colors = rememberBoardColors(state),
+        style = state.boardStyle,
+        status = statusLabel(
+            feed,
+            secondsLeft = secondsToRefresh(feed.nextRefreshAt),
+            listSecondsLeft = secondsToRefresh(feed.nextListRefreshAt),
+        ),
+        onSettingsClick = onSettingsClick,
+        onMuteClick = onMuteClick,
+        muted = state.muted,
+        onRefreshClick = onRefreshClick,
+        refreshEnabled = refreshEnabled,
+        onMapClick = onMapClick,
+        modifier = modifier,
+    )
 }
 
 /** Modalità risparmio: 5 scatti al secondo invece di 10, una colonna di marquee per scatto. */
@@ -1169,23 +1136,23 @@ private const val ECO_FLAP_PAGE_FACTOR = 2
  * ([listSecondsLeft]) mostra i due conti alla rovescia: dettagli ed elenco.
  */
 internal fun statusLabel(
-    state: LiveBoardState,
+    feed: BoardFeed,
     secondsLeft: Long?,
     listSecondsLeft: Long?
 ): String? {
-    val updated = state.updatedAt?.format(TimeWithSeconds)
+    val updated = feed.updatedAt?.format(TimeWithSeconds)
     val last = when {
-        state.error != null && updated != null -> "Aggiornamento non riuscito · dati delle $updated"
-        state.error != null -> "Aggiornamento non riuscito"
+        feed.error != null && updated != null -> "Aggiornamento non riuscito · dati delle $updated"
+        feed.error != null -> "Aggiornamento non riuscito"
         updated != null -> "Aggiornato alle $updated"
-        state.loading -> return "Aggiornamento…"
+        feed.loading -> return "Aggiornamento…"
         else -> return null
     }
     val list = listSecondsLeft?.let { " · elenco tra ${countdown(it)}" }.orEmpty()
     val next = when {
-        state.loading -> "aggiornamento…"
+        feed.loading -> "aggiornamento…"
         secondsLeft == null -> return last + list
-        state.error != null -> "nuovo tentativo tra ${countdown(secondsLeft)}"
+        feed.error != null -> "nuovo tentativo tra ${countdown(secondsLeft)}"
         listSecondsLeft != null -> "dettagli tra ${countdown(secondsLeft)}"
         else -> "prossimo tra ${countdown(secondsLeft)}"
     }
@@ -1238,7 +1205,7 @@ fun rememberNow(): LocalDateTime {
     return now
 }
 
-private fun localNow(): LocalDateTime =
+internal fun localNow(): LocalDateTime =
     Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
 
 private fun LocalDateTime.truncatedToMinute() = LocalDateTime(date, LocalTime(hour, minute))

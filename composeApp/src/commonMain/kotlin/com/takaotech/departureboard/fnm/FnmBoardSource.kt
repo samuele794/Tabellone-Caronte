@@ -2,8 +2,7 @@ package com.takaotech.departureboard.fnm
 
 import com.takaotech.departureboard.cache.StationSource
 import com.takaotech.departureboard.debuglog.DebugLog
-import com.takaotech.departureboard.fnm.FnmBoardSource.Companion.LIST_REFRESH
-import com.takaotech.departureboard.fnm.FnmBoardSource.Companion.MAX_TRAINS
+import com.takaotech.departureboard.fnm.FnmBoardSource.Companion.MAX_STATIONS
 import com.takaotech.departureboard.live.BoardSource
 import com.takaotech.departureboard.rfi.BoardMode
 import com.takaotech.departureboard.rfi.RfiBoard
@@ -48,10 +47,18 @@ class FnmBoardSource(
     override val source = StationSource.Fnm
     override val defaultStation = MilanoCadorna
 
-    private var lists: FnmStationLists? = null
-    private var listStation: String? = null
-    private var listFetchedAt: Instant? = null
-    private var listFetchedMark: TimeSource.Monotonic.ValueTimeMark? = null
+    /** Elenco dei treni di una stazione e quando è stato scaricato; [fetchedAt] null = da riscaricare. */
+    private data class StationList(
+        val lists: FnmStationLists,
+        val fetchedAt: Instant?,
+        val mark: TimeSource.Monotonic.ValueTimeMark,
+    )
+
+    /**
+     * Elenchi per codice stazione, dal meno al più recente: il tabellone e le schede sulla mappa
+     * ne chiedono di diverse, e non devono riscaricarseli a vicenda. Al più [MAX_STATIONS].
+     */
+    private val lists = LinkedHashMap<String, StationList>()
 
     override var listRefresh: Duration? = LIST_REFRESH
         set(value) {
@@ -60,12 +67,12 @@ class FnmBoardSource(
 
     private val listInterval get() = listRefresh ?: LIST_REFRESH
 
-    override val nextListRefreshAt: TimeSource.Monotonic.ValueTimeMark?
-        get() = listFetchedMark?.plus(listInterval)
+    override fun nextListRefreshAt(station: Station): TimeSource.Monotonic.ValueTimeMark? =
+        lists[station.id]?.mark?.plus(listInterval)
 
-    /** Se riscaricarlo fallisce, si tiene comunque l'elenco precedente. */
+    /** Se riscaricarli fallisce, si tengono comunque gli elenchi precedenti. */
     override fun invalidateList() {
-        listFetchedAt = null
+        lists.entries.forEach { it.setValue(it.value.copy(fetchedAt = null)) }
     }
 
     /** Treni ancora in corsa secondo l'ultimo dettaglio, per stazione e modalità. */
@@ -120,10 +127,10 @@ class FnmBoardSource(
     /** Elenco della stazione: lo stesso per [listRefresh], se riscaricarlo fallisce si tiene il vecchio. */
     private suspend fun stationLists(station: Station): FnmStationLists {
         val now = clock.now()
-        val cached = lists?.takeIf { listStation == station.id }
-        val fetchedAt = listFetchedAt
-        if (cached != null && fetchedAt != null && now - fetchedAt < listInterval) return cached
-        if (listStation != station.id) alive.clear()
+        // Rimesso in fondo: è il più recente.
+        val cached = lists.remove(station.id)?.also { lists[station.id] = it }
+        val fetchedAt = cached?.fetchedAt
+        if (fetchedAt != null && now - fetchedAt < listInterval) return cached.lists
 
         val fresh = try {
             client.stationDetails(station.id)
@@ -132,12 +139,15 @@ class FnmBoardSource(
         } catch (e: Exception) {
             if (cached == null) throw e
             DebugLog.d(TAG) { "Elenco ${station.name} non aggiornato (${e.message}), uso il precedente" }
-            return cached
+            return cached.lists
         }
-        lists = fresh
-        listStation = station.id
-        listFetchedAt = now
-        listFetchedMark = TimeSource.Monotonic.markNow()
+        lists.remove(station.id)
+        lists[station.id] = StationList(fresh, now, TimeSource.Monotonic.markNow())
+        while (lists.size > MAX_STATIONS) {
+            val oldest = lists.keys.first()
+            lists.remove(oldest)
+            alive.keys.removeAll { it.first == oldest }
+        }
         return fresh
     }
 
@@ -195,6 +205,9 @@ class FnmBoardSource(
 
         /** Ogni quanto si riscarica l'elenco dei treni della stazione, se non scelto altrimenti. */
         val LIST_REFRESH = 5.minutes
+
+        /** Stazioni di cui si tiene l'elenco: il tabellone e le schede aperte sulla mappa. */
+        private const val MAX_STATIONS = 4
 
         private const val PARALLEL_REQUESTS = 6
         private const val HALF_DAY = 12 * 3600

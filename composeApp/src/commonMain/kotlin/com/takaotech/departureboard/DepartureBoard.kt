@@ -159,6 +159,11 @@ data class BoardLayout(
      */
     val rows: Int? = 10,
     /**
+     * Con [rows] fisse e un'altezza limitata, il passo dei LED si riduce anche perché il
+     * tabellone entri in altezza, non solo in larghezza.
+     */
+    val fitHeight: Boolean = false,
+    /**
      * true = le righe in eccesso scorrono da sole; false = solo a mano. A mano (rotella,
      * trackpad) si può sempre scorrere: l'automatico riprende dopo [scrollResumeMillis].
      */
@@ -294,11 +299,13 @@ fun DepartureBoard(
     val glyphs = rememberFlapGlyphs()
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
         val fill = layout.rows == null && constraints.hasBoundedHeight
+        val fitRows = layout.rows?.takeIf { layout.fitHeight && constraints.hasBoundedHeight }
         var pitch =
             if (constraints.hasBoundedWidth) maxWidth / g.totalWidth else LocalDotPitch.current
-        if (fill) {
+        if (fill || fitRows != null) {
             val footerH = if (footer != null) U.FOOTER_GAP + g.footerH else 0f
-            pitch = min(pitch, maxHeight / (U.CHROME_H + footerH + rowsHeight(U.MIN_FILL_ROWS)))
+            val rows = fitRows ?: U.MIN_FILL_ROWS
+            pitch = min(pitch, maxHeight / (U.CHROME_H + footerH + rowsHeight(rows)))
         }
         val ticker = LocalLedTicker.current ?: rememberLedTicker(layout.ledStepMillis)
         CompositionLocalProvider(

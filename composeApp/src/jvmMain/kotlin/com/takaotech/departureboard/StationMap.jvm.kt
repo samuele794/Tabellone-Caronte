@@ -49,8 +49,9 @@ actual val StationMapSupported: Boolean =
 actual fun StationMap(
     stations: List<MapStation>,
     selected: LatLng?,
-    tooltip: MapStation?,
-    onTooltipChange: (MapStation?) -> Unit,
+    camera: MapCamera?,
+    onCameraChange: (MapCamera) -> Unit,
+    onStationClick: (MapStation) -> Unit,
     focus: MapFocus?,
     modifier: Modifier,
 ) {
@@ -68,7 +69,16 @@ actual fun StationMap(
         return
     }
     ProvideMapPresentationHost(host) {
-        StationMapContent(stations, selected, tooltip, onTooltipChange, focus, modifier, runtime)
+        StationMapContent(
+            stations,
+            selected,
+            camera,
+            onCameraChange,
+            onStationClick,
+            focus,
+            modifier,
+            runtime
+        )
     }
 }
 

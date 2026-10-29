@@ -73,6 +73,9 @@ import com.takaotech.departureboard.BoardStyle
 import com.takaotech.departureboard.FlapClatter
 import com.takaotech.departureboard.cache.StationSource
 import com.takaotech.departureboard.live.LiveBoardState.Companion.BACKGROUND_VOLUME_OPTIONS
+import com.takaotech.departureboard.resources.Res
+import com.takaotech.departureboard.resources.board_arrivals
+import com.takaotech.departureboard.resources.board_departures
 import com.takaotech.departureboard.rfi.BoardMode
 import com.takaotech.departureboard.rfi.Station
 import com.takaotech.departureboard.watch.WatchSelection
@@ -80,6 +83,7 @@ import com.takaotech.departureboard.watch.WatchedTrain
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 import kotlin.time.Duration
 
@@ -172,15 +176,7 @@ private fun MainSettings(state: LiveBoardState, onOpen: (SettingsPage) -> Unit) 
     var pickStation by rememberSaveable { mutableStateOf(false) }
 
     StationField(state.source, state.station, onClick = { pickStation = true })
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        BoardMode.entries.forEachIndexed { i, mode ->
-            SegmentedButton(
-                selected = state.mode == mode,
-                onClick = { state.mode = mode },
-                shape = SegmentedButtonDefaults.itemShape(i, BoardMode.entries.size),
-            ) { Text(if (mode == BoardMode.Departures) "Partenze" else "Arrivi") }
-        }
-    }
+    BoardModeSelector(state.mode, { state.mode = it }, Modifier.fillMaxWidth())
     Column {
         if (state.hasSounds) {
             MenuRow(SettingsPage.Audio.title, audioSummary(state)) { onOpen(SettingsPage.Audio) }
@@ -323,6 +319,31 @@ private fun AudioSettings(state: LiveBoardState) {
                     "Scende al ${(FlapClatter.DUCKED_VOLUME * 100).roundToInt()}% durante gli annunci"
                 } else null,
             )
+        }
+    }
+}
+
+/** Selettore tra partenze e arrivi, nelle impostazioni e nelle schede della mappa. */
+@Composable
+internal fun BoardModeSelector(
+    mode: BoardMode,
+    onChange: (BoardMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SingleChoiceSegmentedButtonRow(modifier) {
+        BoardMode.entries.forEachIndexed { i, entry ->
+            SegmentedButton(
+                selected = mode == entry,
+                onClick = { onChange(entry) },
+                shape = SegmentedButtonDefaults.itemShape(i, BoardMode.entries.size),
+            ) {
+                Text(
+                    stringResource(
+                        if (entry == BoardMode.Departures) Res.string.board_departures
+                        else Res.string.board_arrivals
+                    )
+                )
+            }
         }
     }
 }
@@ -504,6 +525,10 @@ private val ChevronRight =
     materialIcon("M10,6L8.59,7.41 13.17,12l-4.58,4.59L10,18l6,-6z")
 internal val Close =
     materialIcon("M19,6.41L17.59,5 12,10.59 6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 12,13.41 17.59,19 19,17.59 13.41,12z")
+internal val Fullscreen =
+    materialIcon("M7,14H5v5h5v-2H7v-3zM5,10h2V7h3V5H5v5zM17,17h-3v2h5v-5h-2v3zM14,5v2h3v3h2V5h-5z")
+internal val FullscreenExit =
+    materialIcon("M5,16h3v3h2v-5H5v2zM8,8H5v2h5V5H8v3zM14,19h2v-3h3v-2h-5v5zM16,8V5h-2v5h5V8h-3z")
 internal val Search =
     materialIcon("M15.5,14h-0.79l-0.28,-0.27C15.41,12.59 16,11.11 16,9.5 16,5.91 13.09,3 9.5,3S3,5.91 3,9.5 5.91,16 9.5,16c1.61,0 3.09,-0.59 4.23,-1.57l0.27,0.28v0.79l5,4.99L20.49,19l-4.99,-5zM9.5,14C7.01,14 5,11.99 5,9.5S7.01,5 9.5,5 14,7.01 14,9.5 11.99,14 9.5,14z")
 

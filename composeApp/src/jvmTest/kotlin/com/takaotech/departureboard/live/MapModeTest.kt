@@ -105,17 +105,29 @@ class MapModeTest {
                 MapStation(
                     "MILANO CENTRALE",
                     milanoPosition,
-                    listOf(StationSource.Rfi, StationSource.Fnm)
+                    mapOf(
+                        StationSource.Rfi to Station("1728", "MILANO CENTRALE", milanoPosition),
+                        StationSource.Fnm to Station("S01700", "MILANO CENTRALE", milanoPosition),
+                    ),
                 ),
-                MapStation("MILANO CADORNA", LatLng(45.468, 9.175), listOf(StationSource.Fnm)),
+                MapStation(
+                    "MILANO CADORNA",
+                    LatLng(45.468, 9.175),
+                    mapOf(
+                        StationSource.Fnm to
+                                Station("S01066", "MILANO CADORNA", LatLng(45.468, 9.175))
+                    ),
+                ),
             ),
             state.mapStations,
         )
+        assertEquals(listOf(StationSource.Rfi, StationSource.Fnm), state.mapStations[0].sources)
     }
 
     @Test
     fun `la ricerca mette prima i nomi che iniziano col testo, poi quelli che lo contengono`() {
-        fun station(name: String) = MapStation(name, LatLng(0.0, 0.0), listOf(StationSource.Rfi))
+        fun station(name: String) =
+            MapStation(name, LatLng(0.0, 0.0), mapOf(StationSource.Rfi to Station(name, name)))
         val stations = listOf(
             station("SAN MILANO"),
             station("MILANO ROGOREDO"),

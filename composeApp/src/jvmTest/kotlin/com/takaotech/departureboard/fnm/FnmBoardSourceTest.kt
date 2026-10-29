@@ -40,6 +40,7 @@ class FnmBoardSourceTest {
     private var listBody = FnmFixtures.domodossola
     private val listed = FnmParser.parseStationDetails(FnmFixtures.domodossola)
     private var listRequests = 0
+    private val listStations = mutableListOf<String>()
     private val bffRequests = mutableListOf<String>()
     private val htmlRequests = mutableListOf<String>()
     private val bffOverride = mutableMapOf<String, String>()
@@ -50,7 +51,7 @@ class FnmBoardSourceTest {
         when {
             path == "/rest/render/station-details" -> {
                 listRequests++
-                assertEquals(FnmFixtures.DOMODOSSOLA_MIR, request.url.parameters["mirCode"])
+                listStations += request.url.parameters["mirCode"].orEmpty()
                 respond(listBody, HttpStatusCode.OK, json)
             }
 
@@ -116,7 +117,7 @@ class FnmBoardSourceTest {
     @Test
     fun `l'elenco si riscarica solo dopo 5 minuti`() = runBlocking {
         source.board(domodossola, BoardMode.Departures)
-        assertTrue(source.nextListRefreshAt != null)
+        assertTrue(source.nextListRefreshAt(domodossola) != null)
         clock.advance(4.minutes)
         source.board(domodossola, BoardMode.Departures)
         assertEquals(1, listRequests)
@@ -128,9 +129,26 @@ class FnmBoardSourceTest {
     }
 
     @Test
+    fun `l'elenco di ogni stazione resta, chiedendone altre`() = runBlocking {
+        val cadorna = Station("S01066", "MILANO CADORNA")
+        source.board(domodossola, BoardMode.Departures)
+        source.board(cadorna, BoardMode.Departures)
+        clock.advance(1.minutes)
+        source.board(domodossola, BoardMode.Departures)
+        source.board(cadorna, BoardMode.Arrivals)
+
+        assertEquals(listOf(FnmFixtures.DOMODOSSOLA_MIR, "S01066"), listStations)
+        // Ogni stazione ha il suo conto alla rovescia: Cadorna è stata scaricata dopo.
+        assertTrue(
+            assertNotNull(source.nextListRefreshAt(cadorna)) >
+                    assertNotNull(source.nextListRefreshAt(domodossola))
+        )
+    }
+
+    @Test
     fun `invalidando l'elenco si riscarica subito, con i dettagli`() = runBlocking {
         source.board(domodossola, BoardMode.Departures)
-        val before = assertNotNull(source.nextListRefreshAt)
+        val before = assertNotNull(source.nextListRefreshAt(domodossola))
         clock.advance(1.minutes)
 
         source.invalidateList()
@@ -138,7 +156,7 @@ class FnmBoardSourceTest {
 
         assertEquals(2, listRequests)
         assertEquals(2 * FnmBoardSource.MAX_TRAINS, bffRequests.size)
-        assertTrue(assertNotNull(source.nextListRefreshAt) > before)
+        assertTrue(assertNotNull(source.nextListRefreshAt(domodossola)) > before)
     }
 
     @Test
@@ -157,11 +175,11 @@ class FnmBoardSourceTest {
     @Test
     fun `cambiando intervallo si sposta il prossimo riscaricamento dell'elenco`() = runBlocking {
         source.board(domodossola, BoardMode.Departures)
-        val before = assertNotNull(source.nextListRefreshAt)
+        val before = assertNotNull(source.nextListRefreshAt(domodossola))
 
         source.listRefresh = 10.minutes
 
-        assertEquals(5.minutes, assertNotNull(source.nextListRefreshAt) - before)
+        assertEquals(5.minutes, assertNotNull(source.nextListRefreshAt(domodossola)) - before)
     }
 
     @Test

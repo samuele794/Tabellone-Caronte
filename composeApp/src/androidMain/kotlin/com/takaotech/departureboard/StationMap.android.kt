@@ -10,8 +10,9 @@ actual val StationMapSupported: Boolean = true
 actual fun StationMap(
     stations: List<MapStation>,
     selected: LatLng?,
-    tooltip: MapStation?,
-    onTooltipChange: (MapStation?) -> Unit,
+    camera: MapCamera?,
+    onCameraChange: (MapCamera) -> Unit,
+    onStationClick: (MapStation) -> Unit,
     focus: MapFocus?,
     modifier: Modifier,
-) = StationMapContent(stations, selected, tooltip, onTooltipChange, focus, modifier)
+) = StationMapContent(stations, selected, camera, onCameraChange, onStationClick, focus, modifier)
