@@ -21,3 +21,6 @@ internal actual fun WindowEdge.pointerIcon(): PointerIcon = PointerIcon(
 
 @Composable
 internal actual fun LandscapeLock() = Unit
+
+@Composable
+internal actual fun SystemBarsShown() = Unit

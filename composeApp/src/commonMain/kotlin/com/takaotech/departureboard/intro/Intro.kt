@@ -14,12 +14,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -44,17 +41,18 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.takaotech.departureboard.BackgroundSound
 import com.takaotech.departureboard.BoardStyle
 import com.takaotech.departureboard.debuglog.DebugLog
+import com.takaotech.departureboard.live.LandscapeLock
 import com.takaotech.departureboard.live.LiveBoardState
 import com.takaotech.departureboard.resources.Res
 import com.takaotech.departureboard.rfi.BoardMode
 import com.takaotech.departureboard.rfi.Station
 import com.takaotech.departureboard.tts.SoundPlayer
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.TimeZone
@@ -74,9 +72,11 @@ private const val TAG = "Intro"
  * tabellone vero. Parte quando le impostazioni sono ripristinate e solo se [LiveBoardState.intro]
  * è attivo; con [ready] = false aspetta (sul web serve un gesto prima di poter suonare). Si salta
  * solo col pulsante SKIP nella barra in alto del terminale: tocchi e tasti altrove non fanno nulla,
- * e non arrivano al tabellone sotto. Con [enabled] = false (già vista) non parte nemmeno; altrimenti
- * [onFinished] si chiama una volta: alla fine, quando la si salta, o subito se è spenta nelle
- * impostazioni.
+ * e non arrivano al tabellone sotto. [onFinished] si chiama una volta per [session]: alla fine,
+ * quando la si salta, quando l'app va in background ([lifecycle] sotto STARTED) o subito se è
+ * spenta nelle impostazioni. Se invece se ne va solo la composizione (l'Activity ricreata da una
+ * rotazione) l'intro resta a metà in [session], e la prossima composizione la riprende; per questo
+ * su Android [lifecycle] è quello del processo, che non si ferma durante la ricreazione.
  *
  * L'audio ([IntroTimeline.TRACK]) suona con [player]; la grafica segue l'audio da quando comincia
  * a sentirsi. Senza [player], con l'audio silenziato o nelle ore di quiete gira muta.
@@ -85,40 +85,37 @@ private const val TAG = "Intro"
 fun IntroHost(
     state: LiveBoardState,
     player: SoundPlayer?,
-    onFinished: () -> Unit,
-    enabled: Boolean = true,
+    onFinished: () -> Unit = {},
+    session: IntroSession = rememberIntroSession(),
+    lifecycle: Lifecycle = LocalLifecycleOwner.current.lifecycle,
     ready: Boolean = true,
     board: @Composable () -> Unit,
 ) {
     val colors = introColors()
-    var finished by remember { mutableStateOf(!enabled) }
-    var running by remember { mutableStateOf(false) }
-    var skipRequested by remember { mutableStateOf(false) }
-    var decoy by remember { mutableStateOf<Station?>(null) }
-    val clock = remember { mutableLongStateOf(0L) }
-    val exit = remember { mutableFloatStateOf(0f) }
+    val clock = session.clock
+    val exit = session.exit
     val currentReady by rememberUpdatedState(ready)
     val currentOnFinished by rememberUpdatedState(onFinished)
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
 
-    LaunchedEffect(Unit) {
-        if (finished) return@LaunchedEffect
+    LaunchedEffect(session) {
+        if (session.finished) return@LaunchedEffect
         try {
-            snapshotFlow { state.restored }.first { it }
-            if (!state.intro) return@LaunchedEffect
-            // Prima che parta: il copione non deve cambiare a metà.
-            decoy = withTimeoutOrNull(DECOY_TIMEOUT) { randomDecoy(state) }
-            snapshotFlow { currentReady }.first { it }
-            state.introPlaying = true
-            coroutineScope {
-                val audioStarted = CompletableDeferred<Unit>()
-                val audio = launch {
-                    try {
-                        playIntroAudio(player, state) { audioStarted.complete(Unit) }
-                    } finally {
-                        audioStarted.complete(Unit)
-                    }
+            if (!session.running) {
+                snapshotFlow { state.restored }.first { it }
+                if (!state.intro) return@LaunchedEffect
+                // Prima che parta: il copione non deve cambiare a metà.
+                if (!session.decoyChosen) {
+                    session.decoy = withTimeoutOrNull(DECOY_TIMEOUT) { randomDecoy(state) }
+                    session.decoyChosen = true
                 }
+                snapshotFlow { currentReady }.first { it }
+                state.introPlaying = true
+                val audioStarted =
+                    session.startAudio { onStart -> playIntroAudio(player, state, onStart) }
+                withTimeoutOrNull(AUDIO_START_TIMEOUT) { audioStarted.await() }
+                session.running = true
+            }
+            coroutineScope {
                 // Con l'app in background l'intro finisce lì: niente musica a schermo spento.
                 val watcher = launch {
                     lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.STARTED) }
@@ -126,33 +123,37 @@ fun IntroHost(
                     DebugLog.d(TAG) { "App in background: intro interrotta" }
                     this@coroutineScope.cancel()
                 }
-                withTimeoutOrNull(AUDIO_START_TIMEOUT) { audioStarted.await() }
-                running = true
-                val t0 = withFrameNanos { it }
-                var skipFrom = -1L
+                val t0 = withFrameNanos { it } - session.resumeMillis() * 1_000_000
                 while (true) {
                     val ms = (withFrameNanos { it } - t0) / 1_000_000
                     clock.longValue = ms
-                    if (skipRequested && skipFrom < 0) {
-                        skipFrom = ms
-                        audio.cancel()
+                    if (session.skipRequested && session.skipFrom < 0) {
+                        session.skipFrom = ms
+                        session.stopAudio()
                     }
-                    if (skipFrom >= 0) {
+                    if (session.skipFrom >= 0) {
                         exit.floatValue =
-                            IntroTimeline.progress(ms, skipFrom, IntroTimeline.SKIP_FADE)
+                            IntroTimeline.progress(ms, session.skipFrom, IntroTimeline.SKIP_FADE)
                     }
                     if (ms >= IntroTimeline.TOTAL || exit.floatValue >= 1f) break
                 }
                 watcher.cancel()
-                audio.cancel()
             }
         } finally {
-            state.introPlaying = false
-            finished = true
-            currentOnFinished()
+            // Cancellato questo effetto se ne va la composizione, non l'intro: resta a metà.
+            if (isActive) {
+                state.introPlaying = false
+                session.finish()
+                currentOnFinished()
+            } else {
+                session.detach()
+            }
         }
     }
 
+    val finished = session.finished
+    // Anche se sotto non c'è il tabellone (back stack ripristinato su una pagina delle impostazioni).
+    if (!finished) LandscapeLock()
     val keepDashboard = { state.restored && state.dashboard }
     Box(Modifier.fillMaxSize()) {
         Box(
@@ -166,7 +167,7 @@ fun IntroHost(
         // Sotto l'intro solo quando sfuma perché saltata: per il resto è lei a disegnare il cruscotto.
         if (keepDashboard() && (finished || exit.floatValue > 0f)) LiveDashboard(state)
         if (!finished) {
-            val info = rememberIntroInfo(state, decoy)
+            val info = rememberIntroInfo(state, session.decoy, start = session.shownAt)
             Box(
                 Modifier.fillMaxSize().pointerInput(Unit) {
                     awaitEachGesture { awaitFirstDown(requireUnconsumed = false).consume() }
@@ -177,7 +178,7 @@ fun IntroHost(
                         millis = { clock.longValue },
                         info = info,
                         exit = { exit.floatValue },
-                        onSkip = { if (running) skipRequested = true },
+                        onSkip = { if (session.running) session.skipRequested = true },
                         keepDashboard = keepDashboard,
                     )
                     if (!ready) TapToStart()

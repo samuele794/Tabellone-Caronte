@@ -906,6 +906,12 @@ fun LiveBoard(state: LiveBoardState, now: LocalDateTime, charging: Boolean? = nu
     // senza chiuderla, e le sue finestre restano.
     val mapOpen = MapRoute in backStack
     LaunchedEffect(mapOpen) { if (mapOpen) state.openMap() else state.closeMap() }
+    // Dalla cima del back stack, non da chi è composto: col gesto indietro il tabellone si vede
+    // già sotto le impostazioni, e ruotarlo lì ricreerebbe l'Activity annullando il gesto. Le barre
+    // poi sono una cosa sola per tutte le pagine, e passando dall'una all'altra non sfarfallano.
+    val top = backStack.lastOrNull()
+    if (top == BoardRoute) LandscapeLock()
+    if (top is SettingsPage) SystemBarsShown()
     NavDisplay(
         backStack = backStack,
         // Mentre le pagine sfumano si vede cosa c'è sotto: lo sfondo del tema, non quello chiaro

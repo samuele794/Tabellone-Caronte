@@ -2,9 +2,11 @@ package com.takaotech.departureboard.android
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import com.takaotech.departureboard.BackgroundSound
 import com.takaotech.departureboard.FlapClatter
 import com.takaotech.departureboard.announce.Announcer
+import com.takaotech.departureboard.intro.IntroSession
 import com.takaotech.departureboard.live.LiveBoardState
 import com.takaotech.departureboard.tts.AndroidLoopPlayer
 import com.takaotech.departureboard.tts.AndroidPcmPlayer
@@ -25,10 +27,10 @@ class BoardViewModel(app: Application) : AndroidViewModel(app) {
     val introPlayer = AndroidSoundPlayer(app)
 
     /**
-     * L'intro è già stata vista (o saltata, o interrotta) in questo processo: una rotazione non la
-     * fa ripartire.
+     * A che punto è l'intro: una rotazione la riprende da lì, con la musica che intanto continua;
+     * vista (o saltata, o interrotta) una volta, in questo processo non riparte.
      */
-    var introDone = false
+    val intro = IntroSession(viewModelScope)
 
     val state = LiveBoardState(
         services.sources,

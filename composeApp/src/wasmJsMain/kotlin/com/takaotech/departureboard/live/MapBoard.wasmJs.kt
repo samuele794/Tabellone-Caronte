@@ -10,3 +10,6 @@ internal actual fun WindowEdge.pointerIcon(): PointerIcon = PointerIcon.Default
 
 @Composable
 internal actual fun LandscapeLock() = Unit
+
+@Composable
+internal actual fun SystemBarsShown() = Unit

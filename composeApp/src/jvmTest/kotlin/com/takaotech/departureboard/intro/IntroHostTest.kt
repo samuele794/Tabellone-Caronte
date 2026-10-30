@@ -3,6 +3,9 @@ package com.takaotech.departureboard.intro
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
@@ -21,6 +24,9 @@ import com.takaotech.departureboard.live.LiveBoardState
 import com.takaotech.departureboard.rfi.BoardMode
 import com.takaotech.departureboard.rfi.RfiBoard
 import com.takaotech.departureboard.rfi.Station
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -51,12 +57,26 @@ class IntroHostTest {
     private var finished = 0
     private var nanos = 0L
 
+    /** Vive più della composizione, come quella nel ViewModel su Android. */
+    private val sessionScope = CoroutineScope(Dispatchers.Unconfined)
+    private val session = IntroSession(sessionScope)
+
+    /** false = l'intro esce dalla composizione, come quando una rotazione ricrea l'Activity. */
+    private var shown by mutableStateOf(true)
+
     /** Composta al primo frame, così ogni test può prima cambiare le impostazioni. */
     private val sceneDelegate = lazy {
         ImageComposeScene(width = 800, height = 450, density = Density(1f)) {
             CompositionLocalProvider(LocalLifecycleOwner provides owner) {
-                IntroHost(state, player = null, onFinished = { finished++ }) {
-                    Box(Modifier.fillMaxSize())
+                if (shown) {
+                    IntroHost(
+                        state,
+                        player = null,
+                        onFinished = { finished++ },
+                        session = session
+                    ) {
+                        Box(Modifier.fillMaxSize())
+                    }
                 }
             }
         }
@@ -66,6 +86,7 @@ class IntroHostTest {
     @AfterTest
     fun close() {
         if (sceneDelegate.isInitialized()) scene.close()
+        sessionScope.cancel()
     }
 
     /** Avanza la scena di [millis] a frame di [step] ms. */
@@ -116,6 +137,24 @@ class IntroHostTest {
         advance(1_000)
         owner.registry.currentState = Lifecycle.State.CREATED
         advance(50)
+        assertEquals(1, finished)
+        assertFalse(state.introPlaying)
+    }
+
+    @Test
+    fun `se esce solo dalla composizione riprende da dove era`() {
+        advance(3_000)
+        val reached = session.clock.longValue
+        shown = false
+        advance(500)
+        assertEquals(0, finished)
+        assertTrue(state.introPlaying)
+        shown = true
+        advance(100)
+        // Né da capo né saltata: dal punto di prima (più il poco tempo vero passato fuori).
+        assertTrue(session.clock.longValue in reached..reached + 1_000)
+        assertEquals(0, finished)
+        advance(IntroTimeline.TOTAL - reached + 500, step = 50)
         assertEquals(1, finished)
         assertFalse(state.introPlaying)
     }

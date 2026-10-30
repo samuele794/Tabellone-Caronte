@@ -1,9 +1,11 @@
 package com.takaotech.departureboard.android
 
+import android.graphics.Color
 import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -12,8 +14,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.takaotech.departureboard.AppTheme
-import com.takaotech.departureboard.android.MainActivity.Companion.ECO_BRIGHTNESS
 import com.takaotech.departureboard.intro.IntroHost
 import com.takaotech.departureboard.live.LiveBoard
 import com.takaotech.departureboard.live.rememberNow
@@ -23,8 +25,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        // Tabellone a tutto schermo: le barre di sistema ricompaiono con uno swipe dal bordo.
+        // L'app è solo scura: icone chiare anche quando le barre si vedono (impostazioni).
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+        )
+        // Tabellone a tutto schermo: le barre di sistema ricompaiono con uno swipe dal bordo, e
+        // restano nelle impostazioni (SystemBarsShown).
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             hide(WindowInsetsCompat.Type.systemBars())
@@ -36,8 +43,9 @@ class MainActivity : ComponentActivity() {
                 IntroHost(
                     board.state,
                     board.introPlayer,
-                    onFinished = { board.introDone = true },
-                    enabled = !board.introDone,
+                    session = board.intro,
+                    // Quello dell'Activity si ferma a ogni rotazione, e l'intro finirebbe lì.
+                    lifecycle = ProcessLifecycleOwner.get().lifecycle,
                 ) {
                     LiveBoard(board.state, now = rememberNow(), charging = rememberIsCharging())
                 }

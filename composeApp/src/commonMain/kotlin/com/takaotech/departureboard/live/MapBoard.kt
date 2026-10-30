@@ -83,11 +83,19 @@ internal enum class WindowEdge(val left: Boolean) {
 internal expect fun WindowEdge.pointerIcon(): PointerIcon
 
 /**
- * Finché è nella composizione tiene la schermata in orizzontale (una finestra a tutto schermo su
- * mobile); uscendo torna l'orientamento di prima. Dove non si ruota non fa nulla.
+ * Finché è nella composizione tiene la schermata in orizzontale (intro, tabellone, una finestra a
+ * tutto schermo su mobile); quando non ne resta nessuno la rotazione torna libera. Dove non si
+ * ruota non fa nulla.
  */
 @Composable
 internal expect fun LandscapeLock()
+
+/**
+ * Finché è nella composizione mostra le barre di sistema, che altrimenti l'app tiene nascoste (il
+ * tabellone è a tutto schermo); uscendo le nasconde di nuovo. Dove non ce ne sono non fa nulla.
+ */
+@Composable
+internal expect fun SystemBarsShown()
 
 /**
  * Finestra di una [station] sopra la mappa: il tabellone di [boardStation] di [source], in
